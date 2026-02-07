@@ -13,6 +13,8 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 )
 
+var fadePixel *ebiten.Image
+
 const (
 	screenWidth  = 800
 	screenHeight = 600
@@ -77,6 +79,8 @@ const (
 	completeTextDurationFrames = 90
 	completeTextStartY = -80.0
 	killAllIntervalFrames = 3
+fadeWhiteFrames = 30
+	fadeBlackFrames = 30
 
 	playerAnimDelay = 6
 	playerSuperDurationFrames = 480
@@ -211,15 +215,27 @@ type Game struct {
 
 	LevelComplete bool
 	CompleteTick int
+	Level int
+	LevelState int
+	FadeTick int
 
 	KillAllActive bool
 	KillAllTick int
 	KillAllOrder []int
 }
 
+const (
+	levelStatePlaying = iota
+	levelStateCompleteWait
+	levelStateFadeWhite
+	levelStateFadeBlack
+)
+
 func NewGame() (*Game, error) {
 	g := &Game{}
 	g.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
+	g.Level = 1
+	g.LevelState = levelStatePlaying
 	g.Player = Player{
 		X: (screenWidth - playerWidth) / 2,
 		Y: screenHeight - 60,
@@ -260,27 +276,30 @@ func NewGame() (*Game, error) {
 	g.PlayerSprites = playerSprites
 	g.PlayerSuperSprites = playerSuperSprites
 
-	g.Invaders = make([]Invader, 0, invaderCols*invaderRows)
-	for row := 0; row < invaderRows; row++ {
-		for col := 0; col < invaderCols; col++ {
-			x := float64(invaderStartX + col*(invaderWidth+invaderGapX))
-			y := float64(invaderStartY + row*(invaderHeight+invaderGapY))
-			g.Invaders = append(g.Invaders, Invader{
-				X: x,
-				Y: y,
-				W: invaderWidth,
-				H: invaderHeight,
-				Alive: true,
-				Type: row,
-			})
-		}
-	}
-	g.InvaderDir = 1
+	g.resetLevelState()
 	return g, nil
 }
 
 func (g *Game) Update() error {
 	if g.GameOver {
+		return nil
+	}
+
+	// Fade transitions
+	if g.LevelState == levelStateFadeWhite {
+		g.FadeTick++
+		if g.FadeTick >= fadeWhiteFrames {
+			g.LevelState = levelStateFadeBlack
+			g.FadeTick = 0
+		}
+		return nil
+	}
+	if g.LevelState == levelStateFadeBlack {
+		g.FadeTick++
+		if g.FadeTick >= fadeBlackFrames {
+			g.Level++
+			g.resetLevelState()
+		}
 		return nil
 	}
 
@@ -581,9 +600,18 @@ func (g *Game) Update() error {
 	if !g.LevelComplete && g.isLevelComplete() {
 		g.LevelComplete = true
 		g.CompleteTick = 0
+		g.LevelState = levelStateCompleteWait
 	}
 	if g.LevelComplete {
 		g.CompleteTick++
+	}
+
+	// Start transition on fire after completion text
+	if g.LevelState == levelStateCompleteWait && g.CompleteTick >= completeTextDurationFrames {
+		if ebiten.IsKeyPressed(ebiten.KeySpace) {
+			g.LevelState = levelStateFadeWhite
+			g.FadeTick = 0
+		}
 	}
 
 	// Process kill-all sequence
@@ -819,6 +847,24 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			glow := 0.5 + 0.5*math.Sin(float64(g.CompleteTick)*0.08)
 			drawGlowText(screen, "PRESS FIRE TO CONTINUE", screenWidth/2, int(float64(screenHeight)*0.5), 2.2, glow)
 		}
+	}
+
+	// Fade overlays
+	if g.LevelState == levelStateFadeWhite {
+		alpha := easeInOutQuad(float64(g.FadeTick) / float64(fadeWhiteFrames))
+		if alpha > 1 {
+			alpha = 1
+		}
+		drawFadeOverlay(screen, 1, 1, 1, alpha)
+	}
+	if g.LevelState == levelStateFadeBlack {
+		alpha := float64(g.FadeTick) / float64(fadeBlackFrames)
+		if alpha > 1 {
+			alpha = 1
+		}
+		// Start from white, fade to black
+		drawFadeOverlay(screen, 1, 1, 1, 1.0)
+		drawFadeOverlay(screen, 0, 0, 0, alpha)
 	}
 }
 
@@ -1286,6 +1332,17 @@ func drawGlowText(screen *ebiten.Image, text string, centerX, centerY int, scale
 	screen.DrawImage(img, mainOp)
 }
 
+func drawFadeOverlay(screen *ebiten.Image, r, g, b, alpha float64) {
+	if fadePixel == nil {
+		fadePixel = ebiten.NewImage(1, 1)
+		fadePixel.Fill(color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	}
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Scale(float64(screenWidth), float64(screenHeight))
+	op.ColorM.Scale(r, g, b, alpha)
+	screen.DrawImage(fadePixel, op)
+}
+
 func (g *Game) isLevelComplete() bool {
 	if !g.Win {
 		return false
@@ -1296,4 +1353,44 @@ func (g *Game) isLevelComplete() bool {
 		}
 	}
 	return true
+}
+
+func (g *Game) resetLevelState() {
+	g.LevelComplete = false
+	g.CompleteTick = 0
+	g.LevelState = levelStatePlaying
+	g.FadeTick = 0
+	g.Win = false
+
+	g.Bullets = g.Bullets[:0]
+	g.Particles = g.Particles[:0]
+	g.Shockwaves = g.Shockwaves[:0]
+	g.KillAllActive = false
+	g.KillAllTick = 0
+	g.KillAllOrder = g.KillAllOrder[:0]
+
+	g.UFO = UFO{}
+	g.UFOSpawnTick = ufoSpawnFrames
+
+	g.Formation.Active = false
+	g.Formation.Tick = 0
+	g.Formation.Duration = formationDurationFrames
+	g.FormationSpawnTick = formationInitialDelayFrames
+
+	g.Invaders = make([]Invader, 0, invaderCols*invaderRows)
+	for row := 0; row < invaderRows; row++ {
+		for col := 0; col < invaderCols; col++ {
+			x := float64(invaderStartX + col*(invaderWidth+invaderGapX))
+			y := float64(invaderStartY + row*(invaderHeight+invaderGapY))
+			g.Invaders = append(g.Invaders, Invader{
+				X: x,
+				Y: y,
+				W: invaderWidth,
+				H: invaderHeight,
+				Alive: true,
+				Type: row,
+			})
+		}
+	}
+	g.InvaderDir = 1
 }
