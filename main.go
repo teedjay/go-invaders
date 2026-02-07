@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"image/color"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
+	"github.com/hajimehoshi/ebiten/v2/audio"
 )
 
 var fadePixel *ebiten.Image
@@ -80,8 +82,11 @@ const (
 	completeTextDurationFrames = 90
 	completeTextStartY = -80.0
 	killAllIntervalFrames = 3
-fadeWhiteFrames = 30
+	fadeWhiteFrames = 30
 	fadeBlackFrames = 30
+
+	audioSampleRate = 44100
+	sfxVolume = 0.5
 
 	playerAnimDelay = 6
 	playerSuperDurationFrames = 480
@@ -119,6 +124,9 @@ type Bullet struct {
 	Phase float64
 	FromPlayer bool
 	Active bool
+	ID int
+	Wheee *audio.Player
+	StartY float64
 }
 
 type Particle struct {
@@ -183,6 +191,14 @@ type PlayerSpriteSet struct {
 	R2 *ebiten.Image
 }
 
+type SFX struct {
+	Swoosh []byte
+	Wheee  []byte
+	Explosion []byte
+	UFOWooo []byte
+	SuperDrum []byte
+}
+
 type Game struct {
 	Player   Player
 	Invaders []Invader
@@ -227,6 +243,12 @@ type Game struct {
 	KillAllActive bool
 	KillAllTick int
 	KillAllOrder []int
+
+	AudioCtx *audio.Context
+	Sfx SFX
+	NextBulletID int
+	UFOLoop *audio.Player
+	SuperLoop *audio.Player
 }
 
 const (
@@ -242,6 +264,14 @@ func NewGame() (*Game, error) {
 	g.Level = 1
 	g.LevelState = levelStatePlaying
 	g.Lives = 3
+	g.AudioCtx = audio.NewContext(audioSampleRate)
+	g.Sfx = SFX{
+		Swoosh: genSwoosh(audioSampleRate, 0.14),
+		Wheee: genWheee(audioSampleRate, 1.2),
+		Explosion: genExplosion(audioSampleRate, 0.45),
+		UFOWooo: genUFOWooo(audioSampleRate, 1.4),
+		SuperDrum: genSuperDrum(audioSampleRate, 0.5),
+	}
 	g.Player = Player{
 		X: (screenWidth - playerWidth) / 2,
 		Y: screenHeight - 60,
@@ -359,12 +389,17 @@ func (g *Game) Update() error {
 			Active: true,
 			Age: 0,
 			Phase: g.Rand.Float64() * 2 * math.Pi,
+			ID: g.NextBulletID,
 		}
+		g.NextBulletID++
 		b.BaseX = g.Player.X + g.Player.W/2 - b.W/2
 		b.X = b.BaseX
 		b.Y = g.Player.Y + g.Player.H
+		b.StartY = b.Y
+		b.Wheee = g.playWheee()
 		g.Bullets = append(g.Bullets, b)
 		g.Player.Cooldown = playerCooldownFrames
+		g.playSfx(g.Sfx.Swoosh, sfxVolume)
 	}
 
 	// Bullet update
@@ -373,6 +408,8 @@ func (g *Game) Update() error {
 		for i := range g.Bullets {
 			b := g.Bullets[i]
 			if !b.Active {
+				g.stopWheee(b.Wheee)
+				b.Wheee = nil
 				continue
 			}
 			b.Age++
@@ -389,8 +426,11 @@ func (g *Game) Update() error {
 			wobble := math.Sin(b.Phase+float64(b.Age)*0.4) * 3.5
 			b.X = b.BaseX + wobble
 			if b.Y+b.H < 0 {
+				g.stopWheee(b.Wheee)
+				b.Wheee = nil
 				continue
 			}
+			g.updateWheee(b.Wheee, b.StartY, b.Y)
 			// Smoke trail
 			for s := 0; s < smokeSpawnPerFrame; s++ {
 				sx := b.X + b.W/2 + (g.Rand.Float64()-0.5)*4
@@ -420,6 +460,7 @@ func (g *Game) Update() error {
 
 	// UFO spawn + movement
 	if !g.UFO.Active {
+		g.stopUFOLoop()
 		g.UFOSpawnTick--
 		if g.UFOSpawnTick <= 0 {
 			fromLeft := g.Rand.Intn(2) == 0
@@ -428,9 +469,11 @@ func (g *Game) Update() error {
 			} else {
 				g.UFO = UFO{X: screenWidth + ufoWidth, Y: 24, Vx: -ufoSpeed, Active: true}
 			}
+			g.startUFOLoop()
 		}
 	} else {
 		if g.UFO.Crashing {
+			g.stopUFOLoop()
 			g.UFO.CrashAngle += 0.35
 			g.UFO.CrashRadius += 0.08
 			// Keep horizontal velocity while spiraling downward
@@ -447,6 +490,7 @@ func (g *Game) Update() error {
 				g.UFOSpawnTick = ufoSpawnFrames
 			}
 		} else {
+			g.startUFOLoop()
 			g.UFO.X += g.UFO.Vx
 		}
 		g.UFO.FrameTick++
@@ -457,6 +501,7 @@ func (g *Game) Update() error {
 		if !g.UFO.Crashing && (g.UFO.X < -ufoWidth*2 || g.UFO.X > screenWidth+ufoWidth*2) {
 			g.UFO.Active = false
 			g.UFOSpawnTick = ufoSpawnFrames
+			g.stopUFOLoop()
 		}
 	}
 
@@ -485,6 +530,9 @@ func (g *Game) Update() error {
 	}
 	if g.Player.SuperFrames > 0 {
 		g.Player.SuperFrames--
+		g.startSuperLoop()
+	} else {
+		g.stopSuperLoop()
 	}
 
 	// C64 formation spawn + movement
@@ -545,8 +593,11 @@ func (g *Game) Update() error {
 						e.Vy = formationShotSpeedY
 						e.Vx = formationShotSpeedXMin + g.Rand.Float64()*(formationShotSpeedXMax-formationShotSpeedXMin)
 						g.spawnHugeExplosion(e.X+float64(c64SpriteWidth)/2, e.Y+float64(c64SpriteHeight)/2)
+						g.playSfx(g.Sfx.Explosion, sfxVolume)
 						g.Score += 10
 						b.Active = false
+						g.stopWheee(b.Wheee)
+						b.Wheee = nil
 						break
 					}
 				}
@@ -557,6 +608,7 @@ func (g *Game) Update() error {
 			if g.UFO.Active && !g.UFO.Crashing {
 				if rectsOverlap(b.X, b.Y, b.W, b.H, g.UFO.X, g.UFO.Y, ufoWidth, ufoHeight) {
 					g.spawnBigExplosion(g.UFO.X+float64(ufoWidth)/2, g.UFO.Y+float64(ufoHeight)/2)
+					g.playSfx(g.Sfx.Explosion, sfxVolume)
 					g.UFO.Crashing = true
 					g.UFO.CrashAngle = 0
 					g.UFO.CrashRadius = 0.6
@@ -576,9 +628,12 @@ func (g *Game) Update() error {
 					inv.Dying = true
 					inv.DeathTick = 0
 					g.spawnExplosion(inv.X+inv.W/2, inv.Y+inv.H/2)
+					g.playSfx(g.Sfx.Explosion, sfxVolume)
 					g.Score += 10
 					g.InvaderSpeed += g.InvaderSpeedIncrease
 					hit = true
+					g.stopWheee(b.Wheee)
+					b.Wheee = nil
 					break
 				}
 			}
@@ -1403,6 +1458,9 @@ func (g *Game) resetLevelState() {
 	g.FadeTick = 0
 	g.Win = false
 
+	for i := range g.Bullets {
+		g.stopWheee(g.Bullets[i].Wheee)
+	}
 	g.Bullets = g.Bullets[:0]
 	g.Particles = g.Particles[:0]
 	g.Shockwaves = g.Shockwaves[:0]
@@ -1412,6 +1470,8 @@ func (g *Game) resetLevelState() {
 
 	g.UFO = UFO{}
 	g.UFOSpawnTick = ufoSpawnFrames
+	g.stopUFOLoop()
+	g.stopSuperLoop()
 
 	g.Formation.Active = false
 	g.Formation.Tick = 0
@@ -1436,5 +1496,192 @@ func (g *Game) resetLevelState() {
 	g.InvaderDir = 1
 	g.InvaderSpeed = 1.0
 	g.InvaderSpeedThreshold = (invaderCols * invaderRows) / 2
-	g.InvaderSpeedIncrease = float64(g.Level) / 10.0
+	g.InvaderSpeedIncrease = float64(g.Level) / 5.0
+}
+
+func (g *Game) playSfx(data []byte, volume float64) {
+	if g.AudioCtx == nil || len(data) == 0 {
+		return
+	}
+	player := audio.NewPlayerFromBytes(g.AudioCtx, data)
+	if player == nil {
+		return
+	}
+	player.SetVolume(volume)
+	player.Play()
+}
+
+func (g *Game) startUFOLoop() {
+	if g.UFOLoop != nil {
+		return
+	}
+	if g.AudioCtx == nil || len(g.Sfx.UFOWooo) == 0 {
+		return
+	}
+	loop := audio.NewInfiniteLoop(bytes.NewReader(g.Sfx.UFOWooo), int64(len(g.Sfx.UFOWooo)))
+	player, err := audio.NewPlayer(g.AudioCtx, loop)
+	if err != nil {
+		return
+	}
+	player.SetVolume(sfxVolume * 0.35)
+	player.Play()
+	g.UFOLoop = player
+}
+
+func (g *Game) stopUFOLoop() {
+	if g.UFOLoop == nil {
+		return
+	}
+	g.UFOLoop.Close()
+	g.UFOLoop = nil
+}
+
+func (g *Game) startSuperLoop() {
+	if g.SuperLoop != nil {
+		return
+	}
+	if g.AudioCtx == nil || len(g.Sfx.SuperDrum) == 0 {
+		return
+	}
+	loop := audio.NewInfiniteLoop(bytes.NewReader(g.Sfx.SuperDrum), int64(len(g.Sfx.SuperDrum)))
+	player, err := audio.NewPlayer(g.AudioCtx, loop)
+	if err != nil {
+		return
+	}
+	player.SetVolume(sfxVolume * 0.45)
+	player.Play()
+	g.SuperLoop = player
+}
+
+func (g *Game) stopSuperLoop() {
+	if g.SuperLoop == nil {
+		return
+	}
+	g.SuperLoop.Close()
+	g.SuperLoop = nil
+}
+
+func (g *Game) playWheee() *audio.Player {
+	if g.AudioCtx == nil || len(g.Sfx.Wheee) == 0 {
+		return nil
+	}
+	player := audio.NewPlayerFromBytes(g.AudioCtx, g.Sfx.Wheee)
+	if player == nil {
+		return nil
+	}
+	player.SetVolume(sfxVolume * 0.6)
+	player.Play()
+	return player
+}
+
+func (g *Game) updateWheee(player *audio.Player, startY, y float64) {
+	if player == nil {
+		return
+	}
+	progress := 0.0
+	if startY > 0 {
+		progress = (startY - y) / startY
+	}
+	fade := 1.0 - progress*1.2
+	if fade < 0 {
+		fade = 0
+	}
+	player.SetVolume(sfxVolume * 0.6 * fade)
+	if fade == 0 {
+		g.stopWheee(player)
+	}
+}
+
+func (g *Game) stopWheee(player *audio.Player) {
+	if player == nil {
+		return
+	}
+	player.Close()
+}
+
+func genSwoosh(sampleRate int, seconds float64) []byte {
+	n := int(float64(sampleRate) * seconds)
+	data := make([]byte, n*2)
+	cutoff := 0.2
+	prev := 0.0
+	for i := 0; i < n; i++ {
+		t := float64(i) / float64(n)
+		env := 1.0 - t
+		noise := (rand.Float64()*2 - 1)
+		prev = prev + cutoff*(noise-prev)
+		s := prev * env * 0.6
+		writeSample(data, i, s)
+	}
+	return data
+}
+
+func genWheee(sampleRate int, seconds float64) []byte {
+	n := int(float64(sampleRate) * seconds)
+	data := make([]byte, n*2)
+	for i := 0; i < n; i++ {
+		t := float64(i) / float64(sampleRate)
+		freq := 440.0 + 120.0*math.Sin(t*2.0)
+		s := math.Sin(2*math.Pi*freq*t) * 0.35
+		writeSample(data, i, s)
+	}
+	return data
+}
+
+func genExplosion(sampleRate int, seconds float64) []byte {
+	n := int(float64(sampleRate) * seconds)
+	data := make([]byte, n*2)
+	cutoff := 0.08
+	prev := 0.0
+	for i := 0; i < n; i++ {
+		t := float64(i) / float64(n)
+		env := math.Pow(1.0-t, 1.8)
+		noise := (rand.Float64()*2 - 1)
+		prev = prev + cutoff*(noise-prev)
+		thump := math.Sin(2*math.Pi*60*float64(i)/float64(sampleRate)) * (1.0 - t)
+		crack := (rand.Float64()*2 - 1) * math.Exp(-t*18)
+		sparkle := math.Sin(2*math.Pi*1800*float64(i)/float64(sampleRate)) * math.Pow(t, 2) * 0.2
+		s := (prev*0.9 + thump*1.2 + crack*0.7 + sparkle) * env
+		writeSample(data, i, s)
+	}
+	return data
+}
+
+func genUFOWooo(sampleRate int, seconds float64) []byte {
+	n := int(float64(sampleRate) * seconds)
+	data := make([]byte, n*2)
+	for i := 0; i < n; i++ {
+		t := float64(i) / float64(sampleRate)
+		mod := 0.5 + 0.5*math.Sin(t*2.2)
+		freq := 220.0 + 80.0*math.Sin(t*0.7)
+		s := math.Sin(2*math.Pi*freq*t) * (0.4 + 0.3*mod)
+		writeSample(data, i, s)
+	}
+	return data
+}
+
+func genSuperDrum(sampleRate int, seconds float64) []byte {
+	n := int(float64(sampleRate) * seconds)
+	data := make([]byte, n*2)
+	for i := 0; i < n; i++ {
+		t := float64(i) / float64(sampleRate)
+		beat := math.Mod(t, 0.25)
+		env := math.Exp(-beat * 18)
+		thump := math.Sin(2*math.Pi*110*t) * env
+		click := (rand.Float64()*2 - 1) * math.Exp(-beat*60) * 0.2
+		s := (thump*0.9 + click) * 0.9
+		writeSample(data, i, s)
+	}
+	return data
+}
+
+func writeSample(buf []byte, i int, s float64) {
+	if s > 1 {
+		s = 1
+	}
+	if s < -1 {
+		s = -1
+	}
+	v := int16(s * 32767)
+	buf[i*2] = byte(v)
+	buf[i*2+1] = byte(v >> 8)
 }
