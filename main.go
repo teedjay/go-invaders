@@ -62,7 +62,17 @@ const (
 	c64FrameDelay = 8
 	formationDurationFrames = 180
 	formationSpawnFrames = 360
-	formationLoopRadius = 180.0
+	formationInitialDelayFrames = 300
+	formationWaveAmplitude = 60.0
+	formationWaveCycles = 2.0
+	formationWavePhaseStep = 0.6
+
+	formationGravity = 0.35
+	formationShotSpeedY = -6.0
+	formationShotSpeedXMin = -2.5
+	formationShotSpeedXMax = 2.5
+	hugeExplosionParticleMultiplier = 4
+	hugeExplosionShockwaveScale = 1.8
 )
 
 type Player struct {
@@ -133,6 +143,9 @@ type FlyEnemy struct {
 	Index int
 	Side int
 	SpriteIndex int
+	Shot bool
+	Vx float64
+	Vy float64
 }
 
 type Formation struct {
@@ -201,7 +214,7 @@ func NewGame() (*Game, error) {
 		return nil, err
 	}
 	g.C64Sprites = c64Sprites
-	g.FormationSpawnTick = 0
+	g.FormationSpawnTick = formationInitialDelayFrames
 	g.Formation = Formation{Active: false, Tick: 0, Duration: formationDurationFrames}
 
 	g.Invaders = make([]Invader, 0, invaderCols*invaderRows)
@@ -369,6 +382,18 @@ func (g *Game) Update() error {
 				e := &g.Formation.Enemies[i]
 				e.PrevX = e.X
 				e.PrevY = e.Y
+				if e.Shot {
+					e.X += e.Vx
+					e.Y += e.Vy
+					e.Vy += formationGravity
+					e.Angle = math.Atan2(e.Y-e.PrevY, e.X-e.PrevX)
+					if e.Y > screenHeight+float64(c64SpriteHeight) {
+						e.Shot = false
+						e.X = -1000
+						e.Y = -1000
+					}
+					continue
+				}
 				row := e.Index / 4
 				col := e.Index % 4
 				e.X, e.Y = formationPos(e.Side, row, col, t)
@@ -387,6 +412,26 @@ func (g *Game) Update() error {
 		nextBullets := g.Bullets[:0]
 		for bi := range g.Bullets {
 			b := g.Bullets[bi]
+			if g.Formation.Active {
+				for i := range g.Formation.Enemies {
+					e := &g.Formation.Enemies[i]
+					if e.Shot {
+						continue
+					}
+					if rectsOverlap(b.X, b.Y, b.W, b.H, e.X, e.Y, c64SpriteWidth, c64SpriteHeight) {
+						e.Shot = true
+						e.Vy = formationShotSpeedY
+						e.Vx = formationShotSpeedXMin + g.Rand.Float64()*(formationShotSpeedXMax-formationShotSpeedXMin)
+						g.spawnHugeExplosion(e.X+float64(c64SpriteWidth)/2, e.Y+float64(c64SpriteHeight)/2)
+						g.Score += 10
+						b.Active = false
+						break
+					}
+				}
+				if !b.Active {
+					continue
+				}
+			}
 			if g.UFO.Active && !g.UFO.Crashing {
 				if rectsOverlap(b.X, b.Y, b.W, b.H, g.UFO.X, g.UFO.Y, ufoWidth, ufoHeight) {
 					g.spawnBigExplosion(g.UFO.X+float64(ufoWidth)/2, g.UFO.Y+float64(ufoHeight)/2)
@@ -560,11 +605,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 		scale := 1.0
 		if t < 0.45 {
-			scale = 1.0 + 3.0*easeInOutQuad(t/0.45)
+			scale = 1.0 + 1.0*easeInOutQuad(t/0.45)
 		} else if t < 0.7 {
-			scale = 4.0
+			scale = 2.0
 		} else {
-			scale = 4.0 - 3.0*easeInOutQuad((t-0.7)/0.3)
+			scale = 2.0 - 1.0*easeInOutQuad((t-0.7)/0.3)
 		}
 		for i := range g.Formation.Enemies {
 			e := &g.Formation.Enemies[i]
@@ -731,6 +776,48 @@ func (g *Game) spawnBigExplosion(x, y float64) {
 	})
 }
 
+func (g *Game) spawnHugeExplosion(x, y float64) {
+	colors := []color.RGBA{
+		{R: 255, G: 250, B: 160, A: 255},
+		{R: 255, G: 190, B: 90, A: 255},
+		{R: 255, G: 140, B: 210, A: 255},
+		{R: 160, G: 230, B: 255, A: 255},
+		{R: 255, G: 100, B: 70, A: 255},
+	}
+	count := particleCount * hugeExplosionParticleMultiplier
+	for i := 0; i < count; i++ {
+		angle := g.Rand.Float64() * 2 * math.Pi
+		speed := 2.6 + g.Rand.Float64()*5.2
+		vx := math.Cos(angle) * speed
+		vy := math.Sin(angle) * speed
+		c := colors[g.Rand.Intn(len(colors))]
+		g.Particles = append(g.Particles, Particle{
+			X: x,
+			Y: y,
+			Vx: vx,
+			Vy: vy,
+			Life: particleLifeMax + 16,
+			MaxLife: particleLifeMax + 16,
+			Color: c,
+			Size: 4 + g.Rand.Float64()*5,
+			Gravity: 0.05,
+		})
+	}
+
+	scale := hugeExplosionShockwaveScale
+	life := int(float64(shockwaveLifeMax)*scale + 0.5)
+	g.Shockwaves = append(g.Shockwaves, Shockwave{
+		X: x,
+		Y: y,
+		Radius: 8,
+		Life: life,
+		MaxLife: life,
+		Speed: 5.0,
+		Thickness: 2.8,
+		Color: color.RGBA{R: 240, G: 250, B: 255, A: 255},
+	})
+}
+
 func (g *Game) spawnSmoke(x, y float64) {
 	c := []color.RGBA{
 		{R: 120, G: 140, B: 160, A: 255},
@@ -878,30 +965,15 @@ func formationPos(side, row, col int, t float64) (float64, float64) {
 	if side == 1 {
 		startX, endX = endX, startX
 	}
-	start := vec2{X: startX, Y: 40 + offsetY}
-	mid := vec2{X: float64(screenWidth)/2 - offsetX, Y: 140 + offsetY*0.2}
-	if side == 1 {
-		mid.X = float64(screenWidth)/2 + offsetX
-	}
-	exit := vec2{X: endX, Y: 80 + offsetY}
-
-	if t < 0.45 {
-		p := easeInOutQuad(t / 0.45)
-		return lerp(start, mid, p).X, lerp(start, mid, p).Y
-	}
-	if t < 0.7 {
-		p := easeInOutQuad((t - 0.45) / 0.25)
-		angle := p * 8 * math.Pi
-		if side == 1 {
-			angle = -angle
-		}
-		cx := mid.X
-		cy := mid.Y
-		r := formationLoopRadius + offsetY*0.1
-		return cx + math.Cos(angle)*r, cy + math.Sin(angle)*r
-	}
-	p := easeInOutQuad((t - 0.7) / 0.3)
-	return lerp(mid, exit, p).X, lerp(mid, exit, p).Y
+	baseY := 80 + offsetY
+	p := easeInOutQuad(t)
+	x := startX + (endX-startX)*p
+	amp := formationWaveAmplitude
+	phase := float64(row)*formationWavePhaseStep
+	y := baseY + amp*math.Sin(formationWaveCycles*2*math.Pi*t+phase)
+	// Column offset for spacing
+	x += offsetX
+	return x, y
 }
 
 type vec2 struct {
