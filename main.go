@@ -39,6 +39,7 @@ const (
 
 	spriteFrameCount = 4
 	spriteFrameDelay = 20
+	deathAnimFrames = 18
 
 	particleCount = 28
 	particleLifeMax = 30
@@ -67,6 +68,8 @@ type Invader struct {
 	W, H float64
 	Alive bool
 	Type int
+	Dying bool
+	DeathTick int
 }
 
 type Bullet struct {
@@ -311,11 +314,13 @@ func (g *Game) Update() error {
 			hit := false
 			for i := range g.Invaders {
 				inv := &g.Invaders[i]
-				if !inv.Alive {
+				if !inv.Alive || inv.Dying {
 					continue
 				}
 				if rectsOverlap(b.X, b.Y, b.W, b.H, inv.X, inv.Y, inv.W, inv.H) {
 					inv.Alive = false
+					inv.Dying = true
+					inv.DeathTick = 0
 					g.spawnExplosion(inv.X+inv.W/2, inv.Y+inv.H/2)
 					g.Score += 10
 					hit = true
@@ -359,6 +364,16 @@ func (g *Game) Update() error {
 		g.Particles = next
 	}
 
+	// Invader death animations
+	for i := range g.Invaders {
+		if g.Invaders[i].Dying {
+			g.Invaders[i].DeathTick++
+			if g.Invaders[i].DeathTick >= deathAnimFrames {
+				g.Invaders[i].Dying = false
+			}
+		}
+	}
+
 	// Shockwaves update
 	if len(g.Shockwaves) > 0 {
 		next := g.Shockwaves[:0]
@@ -391,10 +406,40 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	// Invaders
 	for i := range g.Invaders {
-		if !g.Invaders[i].Alive {
+		if !g.Invaders[i].Alive && !g.Invaders[i].Dying {
 			continue
 		}
 		inv := &g.Invaders[i]
+		if inv.Dying {
+			t := float64(inv.DeathTick) / float64(deathAnimFrames-1)
+			var scale float64
+			if t < 0.3 {
+				scale = 1.0 + (3.0-1.0)*(t/0.3)
+			} else {
+				scale = 3.0 * (1.0 - (t-0.3)/0.7)
+			}
+			if scale < 0 {
+				scale = 0
+			}
+			alpha := 1.0 - t
+			if alpha < 0 {
+				alpha = 0
+			}
+			if inv.Type >= 0 && inv.Type < len(g.InvaderSprites) && g.Frame < len(g.InvaderSprites[inv.Type]) {
+				op := &ebiten.DrawImageOptions{}
+				cx := inv.W / 2
+				cy := inv.H / 2
+				op.GeoM.Translate(-cx, -cy)
+				op.GeoM.Scale(scale, scale)
+				op.GeoM.Translate(cx, cy)
+				op.GeoM.Translate(inv.X, inv.Y)
+				op.ColorM.Scale(1, 1, 1, alpha)
+				screen.DrawImage(g.InvaderSprites[inv.Type][g.Frame], op)
+			} else {
+				ebitenutil.DrawRect(screen, inv.X, inv.Y, inv.W*scale, inv.H*scale, color.RGBA{R: 200, G: 70, B: 60, A: uint8(255 * alpha)})
+			}
+			continue
+		}
 		if inv.Type >= 0 && inv.Type < len(g.InvaderSprites) && g.Frame < len(g.InvaderSprites[inv.Type]) {
 			op := &ebiten.DrawImageOptions{}
 			op.GeoM.Translate(inv.X, inv.Y)
