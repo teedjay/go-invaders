@@ -990,6 +990,7 @@ func rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh float64) bool {
 }
 
 func (g *Game) spawnExplosion(x, y float64) {
+	g.playSfx(g.Sfx.Explosion, sfxVolume)
 	colors := []color.RGBA{
 		{R: 255, G: 220, B: 100, A: 255},
 		{R: 255, G: 140, B: 60, A: 255},
@@ -1028,6 +1029,7 @@ func (g *Game) spawnExplosion(x, y float64) {
 }
 
 func (g *Game) spawnBigExplosion(x, y float64) {
+	g.playSfx(g.Sfx.Explosion, sfxVolume)
 	colors := []color.RGBA{
 		{R: 255, G: 240, B: 140, A: 255},
 		{R: 255, G: 180, B: 80, A: 255},
@@ -1068,6 +1070,7 @@ func (g *Game) spawnBigExplosion(x, y float64) {
 }
 
 func (g *Game) spawnHugeExplosion(x, y float64) {
+	g.playSfx(g.Sfx.Explosion, sfxVolume)
 	colors := []color.RGBA{
 		{R: 255, G: 250, B: 160, A: 255},
 		{R: 255, G: 190, B: 90, A: 255},
