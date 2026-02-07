@@ -76,6 +76,7 @@ const (
 
 	completeTextDurationFrames = 90
 	completeTextStartY = -80.0
+	killAllIntervalFrames = 3
 
 	playerAnimDelay = 6
 	playerSuperDurationFrames = 480
@@ -210,6 +211,10 @@ type Game struct {
 
 	LevelComplete bool
 	CompleteTick int
+
+	KillAllActive bool
+	KillAllTick int
+	KillAllOrder []int
 }
 
 func NewGame() (*Game, error) {
@@ -277,6 +282,23 @@ func NewGame() (*Game, error) {
 func (g *Game) Update() error {
 	if g.GameOver {
 		return nil
+	}
+
+	// Hidden: kill all regular aliens (F)
+	if ebiten.IsKeyPressed(ebiten.KeyF) && !g.KillAllActive {
+		g.KillAllOrder = g.KillAllOrder[:0]
+		for i := range g.Invaders {
+			if g.Invaders[i].Alive {
+				g.KillAllOrder = append(g.KillAllOrder, i)
+			}
+		}
+		if len(g.KillAllOrder) > 0 {
+			g.Rand.Shuffle(len(g.KillAllOrder), func(i, j int) {
+				g.KillAllOrder[i], g.KillAllOrder[j] = g.KillAllOrder[j], g.KillAllOrder[i]
+			})
+			g.KillAllActive = true
+			g.KillAllTick = 0
+		}
 	}
 
 	// Movement
@@ -564,6 +586,31 @@ func (g *Game) Update() error {
 		g.CompleteTick++
 	}
 
+	// Process kill-all sequence
+	if g.KillAllActive {
+		g.KillAllTick++
+		if g.KillAllTick >= killAllIntervalFrames {
+			g.KillAllTick = 0
+			if len(g.KillAllOrder) > 0 {
+				idx := g.KillAllOrder[0]
+				g.KillAllOrder = g.KillAllOrder[1:]
+				if idx >= 0 && idx < len(g.Invaders) {
+					inv := &g.Invaders[idx]
+					if inv.Alive {
+						inv.Alive = false
+						inv.Dying = true
+						inv.DeathTick = 0
+						g.spawnExplosion(inv.X+inv.W/2, inv.Y+inv.H/2)
+						g.Score += 10
+					}
+				}
+			}
+			if len(g.KillAllOrder) == 0 {
+				g.KillAllActive = false
+			}
+		}
+	}
+
 	// Particles update
 	if len(g.Particles) > 0 {
 		next := g.Particles[:0]
@@ -765,7 +812,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			t = 1
 		}
 		y := completeTextStartY + (float64(screenHeight)/2-completeTextStartY)*easeOutQuad(t)
-		drawHugeText(screen, "GREAT WORK", screenWidth/2, int(y))
+		pulse := 1.0 + 0.08*math.Sin(float64(g.CompleteTick)*0.25)
+		drawHugeText(screen, "GREAT WORK", screenWidth/2, int(y), pulse)
 	}
 }
 
@@ -1189,19 +1237,21 @@ func easeOutQuad(t float64) float64 {
 	return 1 - (1-t)*(1-t)
 }
 
-func drawHugeText(screen *ebiten.Image, text string, centerX, y int) {
+func drawHugeText(screen *ebiten.Image, text string, centerX, centerY int, scaleFactor float64) {
 	lines := []string{text}
 	scale := 4
 	for _, line := range lines {
-		w := len(line) * 8 * scale
+		w := int(float64(len(line)*8*scale) * scaleFactor)
 		x := centerX - w/2
+		y := centerY - int(float64(8*scale)*scaleFactor)/2
 		for i, r := range line {
 			ch := string(r)
 			img := ebiten.NewImage(8, 8)
+			img.Fill(color.RGBA{0, 0, 0, 0})
 			ebitenutil.DebugPrintAt(img, ch, 0, 0)
 			op := &ebiten.DrawImageOptions{}
-			op.GeoM.Scale(float64(scale), float64(scale))
-			op.GeoM.Translate(float64(x+i*8*scale), float64(y))
+			op.GeoM.Scale(float64(scale)*scaleFactor, float64(scale)*scaleFactor)
+			op.GeoM.Translate(float64(x)+float64(i*8*scale)*scaleFactor, float64(y))
 			screen.DrawImage(img, op)
 		}
 	}
