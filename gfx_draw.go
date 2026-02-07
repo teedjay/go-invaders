@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"image/color"
+	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -65,6 +66,29 @@ func drawFadeOverlay(screen *ebiten.Image, r, g, b, alpha float64) {
 	screen.DrawImage(fadePixel, op)
 }
 
+func drawStartImage(screen *ebiten.Image, img *ebiten.Image) {
+	if img == nil {
+		return
+	}
+	w := float64(img.Bounds().Dx())
+	h := float64(img.Bounds().Dy())
+	sw := float64(screenWidth)
+	sh := float64(screenHeight)
+	if w == 0 || h == 0 {
+		return
+	}
+	scale := sw / w
+	if sh/h > scale {
+		scale = sh / h
+	}
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Scale(scale, scale)
+	x := (sw - w*scale) / 2
+	y := (sh - h*scale) / 2
+	op.GeoM.Translate(x, y)
+	screen.DrawImage(img, op)
+}
+
 func drawHUD(screen *ebiten.Image, g *Game) {
 	scale := 3.0
 	left := fmt.Sprintf("SCORE: %d", g.Score)
@@ -96,6 +120,48 @@ func drawHUDText(screen *ebiten.Image, text string, x, y int, scale float64) {
 	op.GeoM.Scale(scale, scale)
 	op.GeoM.Translate(float64(x), float64(y))
 	screen.DrawImage(img, op)
+}
+
+func drawAmigaText(screen *ebiten.Image, font *AmigaFont, text string, centerX, y int, alpha float64, waveAmp float64, tick int) {
+	if font == nil || font.W == 0 {
+		return
+	}
+	scale := 2.0
+	spacing := 1
+	totalW := 0
+	for _, r := range text {
+		if r == ' ' || font.Glyphs[r] == nil {
+			totalW += int(float64(font.W+spacing) * scale)
+			continue
+		}
+		totalW += int(float64(font.W+spacing) * scale)
+	}
+	if totalW > 0 {
+		totalW -= int(float64(spacing) * scale)
+	}
+	x := centerX - totalW/2
+	if alpha < 0 {
+		alpha = 0
+	}
+	if alpha > 1 {
+		alpha = 1
+	}
+	for _, r := range text {
+		if r == ' ' || font.Glyphs[r] == nil {
+			x += int(float64(font.W+spacing) * scale)
+			continue
+		}
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Scale(scale, scale)
+		offsetY := 0.0
+		if waveAmp > 0 {
+			offsetY = math.Sin(float64(tick)*0.12+float64(x)*0.03) * waveAmp
+		}
+		op.GeoM.Translate(float64(x), float64(y)+offsetY)
+		op.ColorM.Scale(1, 1, 1, alpha)
+		screen.DrawImage(font.Glyphs[r], op)
+		x += int(float64(font.W+spacing) * scale)
+	}
 }
 
 func (g *Game) playerSpriteImage() *ebiten.Image {

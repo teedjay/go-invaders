@@ -2,10 +2,20 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"math"
 	"math/rand"
 
 	"github.com/hajimehoshi/ebiten/v2/audio"
+	"github.com/gotracker/playback/format"
+	"github.com/gotracker/playback/mixing"
+	"github.com/gotracker/playback/mixing/sampling"
+	"github.com/gotracker/playback/output"
+	"github.com/gotracker/playback/player/feature"
+	"github.com/gotracker/playback/player/machine"
+	"github.com/gotracker/playback/player/machine/settings"
+	"github.com/gotracker/playback/player/sampler"
+	"github.com/gotracker/playback/song"
 )
 
 const (
@@ -31,6 +41,39 @@ func (g *Game) playSfx(data []byte, volume float64) {
 	}
 	player.SetVolume(volume)
 	player.Play()
+}
+
+func (g *Game) startMusic(path string) {
+	if g.AudioCtx == nil || g.MusicPlayer != nil {
+		return
+	}
+	data, err := renderMOD(path, audioSampleRate)
+	if err != nil || len(data) == 0 {
+		return
+	}
+	loop := audio.NewInfiniteLoop(bytes.NewReader(data), int64(len(data)))
+	player, err := audio.NewPlayer(g.AudioCtx, loop)
+	if err != nil {
+		return
+	}
+	player.SetVolume(0.3)
+	player.Play()
+	g.MusicPlayer = player
+}
+
+func (g *Game) setMusicVolume(v float64) {
+	if g.MusicPlayer == nil {
+		return
+	}
+	g.MusicPlayer.SetVolume(v)
+}
+
+func (g *Game) stopMusic() {
+	if g.MusicPlayer == nil {
+		return
+	}
+	g.MusicPlayer.Close()
+	g.MusicPlayer = nil
 }
 
 func (g *Game) startUFOLoop() {
@@ -206,4 +249,59 @@ func writeSample(buf []byte, i int, s float64) {
 	v := int16(s * 32767)
 	buf[i*2] = byte(v)
 	buf[i*2+1] = byte(v >> 8)
+}
+
+func renderMOD(path string, sampleRate int) ([]byte, error) {
+	const (
+		channels     = 2
+		sampleFormat = sampling.Format16BitLESigned
+	)
+
+	var features []feature.Feature
+	features = append(features, feature.UseNativeSampleFormat(true))
+	features = append(features, feature.IgnoreUnknownEffect{Enabled: true})
+	features = append(features, feature.SongLoop{Count: 0})
+
+	songData, songFormat, err := format.Load(path, features)
+	if err != nil {
+		return nil, err
+	}
+
+	var userSettings settings.UserSettings
+	if err := songFormat.ConvertFeaturesToSettings(&userSettings, features); err != nil {
+		return nil, err
+	}
+
+	player, err := machine.NewMachine(songData, userSettings)
+	if err != nil {
+		return nil, err
+	}
+
+	m := mixing.Mixer{Channels: channels}
+	var pcm bytes.Buffer
+
+	out := sampler.NewSampler(sampleRate, channels, 1.0, func(premix *output.PremixData) {
+		data := m.Flatten(premix.SamplesLen, premix.Data, premix.MixerVolume, sampleFormat)
+		_, _ = pcm.Write(data)
+	})
+	if out == nil {
+		return nil, errors.New("could not create sampler")
+	}
+
+	for {
+		if err := player.Advance(); err != nil {
+			if errors.Is(err, song.ErrStopSong) {
+				break
+			}
+			return nil, err
+		}
+		if err := player.Render(out); err != nil {
+			if errors.Is(err, song.ErrStopSong) {
+				break
+			}
+			return nil, err
+		}
+	}
+
+	return pcm.Bytes(), nil
 }

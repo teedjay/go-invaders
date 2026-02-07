@@ -8,172 +8,173 @@ import (
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/audio"
+	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 )
-
 
 const (
 	screenWidth  = 800
 	screenHeight = 600
 
-	playerWidth  = 48
-	playerHeight = 16
-	playerSpeed  = 4.0
+	playerWidth          = 48
+	playerHeight         = 16
+	playerSpeed          = 4.0
 	playerCooldownFrames = 12
 
 	bulletWidth  = 4
 	bulletHeight = 10
 	bulletSpeed  = -7.0
 
-	invaderCols = 10
-	invaderRows = 4
-	invaderWidth  = 32
-	invaderHeight = 24
-	invaderGapX   = 12
-	invaderGapY   = 10
-	invaderStartX = 80
-	invaderStartY = 60
-	invaderStepDown = 12
-	invaderSpeed = 1.0
+	invaderCols                = 10
+	invaderRows                = 4
+	invaderWidth               = 32
+	invaderHeight              = 24
+	invaderGapX                = 12
+	invaderGapY                = 10
+	invaderStartX              = 80
+	invaderStartY              = 60
+	invaderStepDown            = 12
+	invaderSpeed               = 1.0
 	invaderSpeedIncreaseFactor = 0.2
 
 	spriteFrameCount = 4
 	spriteFrameDelay = 20
-	deathAnimFrames = 18
+	deathAnimFrames  = 18
 
-	particleCount = 28
-	particleLifeMax = 30
-	smokeLifeMax = 24
+	particleCount      = 28
+	particleLifeMax    = 30
+	smokeLifeMax       = 24
 	smokeSpawnPerFrame = 2
-	shockwaveLifeMax = 18
-	shockwaveSegments = 36
+	shockwaveLifeMax   = 18
+	shockwaveSegments  = 36
 
-	ufoWidth = 64
-	ufoHeight = 32
-	ufoFrameCount = 8
-	ufoFrameDelay = 8
+	ufoWidth       = 64
+	ufoHeight      = 32
+	ufoFrameCount  = 8
+	ufoFrameDelay  = 8
 	ufoSpawnFrames = 600
-	ufoSpeed = 5.5
+	ufoSpeed       = 5.5
 
-	c64SpriteWidth = 32
-	c64SpriteHeight = 24
-	c64SpriteRows = 8
-	c64FrameCount = 4
-	c64FrameDelay = 8
-	formationDurationFrames = 300
-	formationSpawnFrames = 360
+	c64SpriteWidth              = 32
+	c64SpriteHeight             = 24
+	c64SpriteRows               = 8
+	c64FrameCount               = 4
+	c64FrameDelay               = 8
+	formationDurationFrames     = 300
+	formationSpawnFrames        = 360
 	formationInitialDelayFrames = 300
-	formationWaveAmplitude = 60.0
-	formationWaveCycles = 2.0
-	formationWavePhaseStep = 0.6
+	formationWaveAmplitude      = 60.0
+	formationWaveCycles         = 2.0
+	formationWavePhaseStep      = 0.6
 
-	formationGravity = 0.35
-	formationShotSpeedY = -6.0
-	formationShotSpeedXMin = -2.5
-	formationShotSpeedXMax = 2.5
+	formationGravity                = 0.35
+	formationShotSpeedY             = -6.0
+	formationShotSpeedXMin          = -2.5
+	formationShotSpeedXMax          = 2.5
 	hugeExplosionParticleMultiplier = 4
-	hugeExplosionShockwaveScale = 1.8
+	hugeExplosionShockwaveScale     = 1.8
 
 	completeTextDurationFrames = 90
-	completeTextStartY = -80.0
-	killAllIntervalFrames = 3
-	fadeWhiteFrames = 30
-	fadeBlackFrames = 30
+	completeTextStartY         = -80.0
+	killAllIntervalFrames      = 3
+	fadeWhiteFrames            = 30
+	fadeBlackFrames            = 30
+	startPromptDelayFrames     = 600
+	startFadeFrames            = 120
 
-	playerAnimDelay = 6
-	playerSuperDurationFrames = 480
+	playerAnimDelay             = 6
+	playerSuperDurationFrames   = 480
 	playerSuperBlinkFirstFrames = 60
-	playerSuperBlinkLastFrames = 120
-	playerSuperBlinkPeriod = 6
+	playerSuperBlinkLastFrames  = 120
+	playerSuperBlinkPeriod      = 6
 )
 
 type Player struct {
-	X, Y  float64
-	W, H  float64
-	Speed float64
-	Cooldown int
+	X, Y        float64
+	W, H        float64
+	Speed       float64
+	Cooldown    int
 	SuperFrames int
-	AnimDir int
-	AnimStep int
-	AnimTick int
+	AnimDir     int
+	AnimStep    int
+	AnimTick    int
 }
 
 type Invader struct {
-	X, Y float64
-	W, H float64
-	Alive bool
-	Type int
-	Dying bool
+	X, Y      float64
+	W, H      float64
+	Alive     bool
+	Type      int
+	Dying     bool
 	DeathTick int
 }
 
 type Bullet struct {
-	X, Y float64
-	BaseX float64
-	W, H float64
-	Vy float64
-	Age int
-	Phase float64
+	X, Y       float64
+	BaseX      float64
+	W, H       float64
+	Vy         float64
+	Age        int
+	Phase      float64
 	FromPlayer bool
-	Active bool
-	ID int
-	Wheee *audio.Player
-	StartY float64
+	Active     bool
+	ID         int
+	Wheee      *audio.Player
+	StartY     float64
 }
 
 type Particle struct {
-	X, Y float64
-	Vx, Vy float64
-	Life int
+	X, Y    float64
+	Vx, Vy  float64
+	Life    int
 	MaxLife int
-	Color color.RGBA
-	Size float64
+	Color   color.RGBA
+	Size    float64
 	Gravity float64
 }
 
 type Shockwave struct {
-	X, Y float64
-	Radius float64
-	Life int
-	MaxLife int
-	Speed float64
+	X, Y      float64
+	Radius    float64
+	Life      int
+	MaxLife   int
+	Speed     float64
 	Thickness float64
-	Color color.RGBA
+	Color     color.RGBA
 }
 
 type UFO struct {
-	X, Y float64
-	Vx float64
-	Active bool
-	Frame int
-	FrameTick int
-	Crashing bool
-	CrashAngle float64
+	X, Y        float64
+	Vx          float64
+	Active      bool
+	Frame       int
+	FrameTick   int
+	Crashing    bool
+	CrashAngle  float64
 	CrashRadius float64
-	CrashVy float64
+	CrashVy     float64
 }
 
 type FlyEnemy struct {
-	X, Y float64
+	X, Y         float64
 	PrevX, PrevY float64
-	Angle float64
-	Frame int
-	FrameTick int
-	Index int
-	Side int
-	SpriteIndex int
-	Shot bool
-	Vx float64
-	Vy float64
+	Angle        float64
+	Frame        int
+	FrameTick    int
+	Index        int
+	Side         int
+	SpriteIndex  int
+	Shot         bool
+	Vx           float64
+	Vy           float64
 }
 
 type Formation struct {
-	Active bool
-	Tick int
+	Active   bool
+	Tick     int
 	Duration int
-	Enemies [16]FlyEnemy
-	Side int
+	Enemies  [16]FlyEnemy
+	Side     int
 }
 
 type PlayerSpriteSet struct {
@@ -190,50 +191,57 @@ type Game struct {
 	Bullets  []Bullet
 	Score    int
 
-	InvaderDir float64
-	GameOver bool
-	Win bool
-	InvaderSpeed float64
+	InvaderDir            float64
+	GameOver              bool
+	Win                   bool
+	InvaderSpeed          float64
 	InvaderSpeedThreshold int
-	InvaderSpeedIncrease float64
+	InvaderSpeedIncrease  float64
 
 	InvaderSprites [][]*ebiten.Image
-	Frame int
-	FrameTick int
+	Frame          int
+	FrameTick      int
 
-	Particles []Particle
+	Particles  []Particle
 	Shockwaves []Shockwave
-	Rand *rand.Rand
+	Rand       *rand.Rand
 
-	UFOSprites []*ebiten.Image
-	UFO UFO
+	UFOSprites   []*ebiten.Image
+	UFO          UFO
 	UFOSpawnTick int
 
-	C64Sprites [][]*ebiten.Image
-	Formation Formation
+	C64Sprites         [][]*ebiten.Image
+	Formation          Formation
 	FormationSpawnTick int
-	C64Frame int
-	C64FrameTick int
+	C64Frame           int
+	C64FrameTick       int
 
-	PlayerSprites PlayerSpriteSet
+	PlayerSprites      PlayerSpriteSet
 	PlayerSuperSprites PlayerSpriteSet
 
 	LevelComplete bool
-	CompleteTick int
-	Level int
-	LevelState int
-	FadeTick int
-	Lives int
+	CompleteTick  int
+	Level         int
+	LevelState    int
+	FadeTick      int
+	Lives         int
 
 	KillAllActive bool
-	KillAllTick int
-	KillAllOrder []int
+	KillAllTick   int
+	KillAllOrder  []int
 
-	AudioCtx *audio.Context
-	Sfx SFX
+	AudioCtx     *audio.Context
+	Sfx          SFX
 	NextBulletID int
-	UFOLoop *audio.Player
-	SuperLoop *audio.Player
+	UFOLoop      *audio.Player
+	SuperLoop    *audio.Player
+	MusicPlayer  *audio.Player
+
+	StartImage    *ebiten.Image
+	StartState    int
+	StartTick     int
+	StartFadeTick int
+	StartFont     *AmigaFont
 }
 
 const (
@@ -241,6 +249,12 @@ const (
 	levelStateCompleteWait
 	levelStateFadeWhite
 	levelStateFadeBlack
+)
+
+const (
+	startStateScreen = iota
+	startStateFading
+	startStateDone
 )
 
 func NewGame() (*Game, error) {
@@ -251,18 +265,24 @@ func NewGame() (*Game, error) {
 	g.Lives = 3
 	g.AudioCtx = audio.NewContext(audioSampleRate)
 	g.Sfx = SFX{
-		Swoosh: genSwoosh(audioSampleRate, 0.14),
-		Wheee: genWheee(audioSampleRate, 1.2),
+		Swoosh:    genSwoosh(audioSampleRate, 0.14),
+		Wheee:     genWheee(audioSampleRate, 1.2),
 		Explosion: genExplosion(audioSampleRate, 0.45),
-		UFOWooo: genUFOWooo(audioSampleRate, 1.4),
+		UFOWooo:   genUFOWooo(audioSampleRate, 1.4),
 		SuperDrum: genSuperDrum(audioSampleRate, 0.5),
 	}
+	g.StartState = startStateScreen
+	g.StartTick = 0
+	g.StartFadeTick = 0
+	g.StartImage, _ = loadImage("/Users/thorej/opt/codex/go-invaders/assets/image.png")
+	g.StartFont, _ = loadAmigaFont("/Users/thorej/opt/codex/go-invaders/assets/amiga_font.png")
+	g.startMusic("/Users/thorej/opt/codex/go-invaders/music/codex_amiga_mstb.mod")
 	g.Player = Player{
-		X: (screenWidth - playerWidth) / 2,
-		Y: screenHeight - 60,
-		W: playerWidth,
-		H: playerHeight,
-		Speed: playerSpeed,
+		X:        (screenWidth - playerWidth) / 2,
+		Y:        screenHeight - 60,
+		W:        playerWidth,
+		H:        playerHeight,
+		Speed:    playerSpeed,
 		Cooldown: 0,
 	}
 	g.Bullets = make([]Bullet, 0, 5)
@@ -303,6 +323,30 @@ func NewGame() (*Game, error) {
 
 func (g *Game) Update() error {
 	if g.GameOver {
+		return nil
+	}
+
+	// Start screen flow
+	if g.StartState != startStateDone {
+		g.StartTick++
+		if g.StartState == startStateScreen {
+			if ebiten.IsKeyPressed(ebiten.KeySpace) {
+				g.StartState = startStateFading
+				g.StartFadeTick = 0
+			}
+		} else if g.StartState == startStateFading {
+			g.StartFadeTick++
+			fadeT := float64(g.StartFadeTick) / float64(startFadeFrames)
+			if fadeT > 1 {
+				fadeT = 1
+			}
+			g.setMusicVolume(0.3 * (1.0 - fadeT))
+			if g.StartFadeTick >= startFadeFrames {
+				g.stopMusic()
+				g.StartState = startStateDone
+				g.resetLevelState()
+			}
+		}
 		return nil
 	}
 
@@ -367,14 +411,14 @@ func (g *Game) Update() error {
 	}
 	if !g.LevelComplete && ebiten.IsKeyPressed(ebiten.KeySpace) && g.Player.Cooldown == 0 && len(g.Bullets) < cap(g.Bullets) {
 		b := Bullet{
-			W: bulletWidth,
-			H: bulletHeight,
-			Vy: bulletSpeed,
+			W:          bulletWidth,
+			H:          bulletHeight,
+			Vy:         bulletSpeed,
 			FromPlayer: true,
-			Active: true,
-			Age: 0,
-			Phase: g.Rand.Float64() * 2 * math.Pi,
-			ID: g.NextBulletID,
+			Active:     true,
+			Age:        0,
+			Phase:      g.Rand.Float64() * 2 * math.Pi,
+			ID:         g.NextBulletID,
 		}
 		g.NextBulletID++
 		b.BaseX = g.Player.X + g.Player.W/2 - b.W/2
@@ -740,6 +784,35 @@ func (g *Game) Update() error {
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Fill(color.RGBA{R: 12, G: 16, B: 20, A: 255})
 
+	if g.StartState != startStateDone {
+		drawStartImage(screen, g.StartImage)
+		alpha := 0.0
+		if g.StartTick >= 120 {
+			alpha = float64(g.StartTick-120) / 60.0
+		}
+		var waveAmp float64
+		if g.StartTick >= 300 {
+			t := float64(g.StartTick-300) / 300.0
+			if t > 1 {
+				t = 1
+			}
+			waveAmp = 50 * t
+		}
+		drawAmigaText(screen, g.StartFont, "GO INVADERS", screenWidth/2, int(float64(screenHeight)*0.2), alpha, waveAmp, g.StartTick)
+		if g.StartTick >= startPromptDelayFrames {
+			glow := 0.5 + 0.5*math.Sin(float64(g.StartTick)*0.08)
+			drawGlowText(screen, "PRESS FIRE TO START", screenWidth/2, int(float64(screenHeight)*0.65), 3.0, glow)
+		}
+		if g.StartState == startStateFading {
+			alpha := easeInOutQuad(float64(g.StartFadeTick) / float64(startFadeFrames))
+			if alpha > 1 {
+				alpha = 1
+			}
+			drawFadeOverlay(screen, 0, 0, 0, alpha)
+		}
+		return
+	}
+
 	// Invaders
 	for i := range g.Invaders {
 		if !g.Invaders[i].Alive && !g.Invaders[i].Dying {
@@ -960,27 +1033,27 @@ func (g *Game) spawnExplosion(x, y float64) {
 		vy := math.Sin(angle) * speed
 		c := colors[g.Rand.Intn(len(colors))]
 		g.Particles = append(g.Particles, Particle{
-			X: x,
-			Y: y,
-			Vx: vx,
-			Vy: vy,
-			Life: particleLifeMax,
+			X:       x,
+			Y:       y,
+			Vx:      vx,
+			Vy:      vy,
+			Life:    particleLifeMax,
 			MaxLife: particleLifeMax,
-			Color: c,
-			Size: 2 + g.Rand.Float64()*2,
+			Color:   c,
+			Size:    2 + g.Rand.Float64()*2,
 			Gravity: 0.05,
 		})
 	}
 
 	g.Shockwaves = append(g.Shockwaves, Shockwave{
-		X: x,
-		Y: y,
-		Radius: 4,
-		Life: shockwaveLifeMax,
-		MaxLife: shockwaveLifeMax,
-		Speed: 3.2,
+		X:         x,
+		Y:         y,
+		Radius:    4,
+		Life:      shockwaveLifeMax,
+		MaxLife:   shockwaveLifeMax,
+		Speed:     3.2,
 		Thickness: 1.5,
-		Color: color.RGBA{R: 180, G: 220, B: 255, A: 255},
+		Color:     color.RGBA{R: 180, G: 220, B: 255, A: 255},
 	})
 }
 
@@ -1000,27 +1073,27 @@ func (g *Game) spawnBigExplosion(x, y float64) {
 		vy := math.Sin(angle) * speed
 		c := colors[g.Rand.Intn(len(colors))]
 		g.Particles = append(g.Particles, Particle{
-			X: x,
-			Y: y,
-			Vx: vx,
-			Vy: vy,
-			Life: particleLifeMax + 10,
+			X:       x,
+			Y:       y,
+			Vx:      vx,
+			Vy:      vy,
+			Life:    particleLifeMax + 10,
 			MaxLife: particleLifeMax + 10,
-			Color: c,
-			Size: 3 + g.Rand.Float64()*3,
+			Color:   c,
+			Size:    3 + g.Rand.Float64()*3,
 			Gravity: 0.04,
 		})
 	}
 
 	g.Shockwaves = append(g.Shockwaves, Shockwave{
-		X: x,
-		Y: y,
-		Radius: 6,
-		Life: shockwaveLifeMax + 8,
-		MaxLife: shockwaveLifeMax + 8,
-		Speed: 4.2,
+		X:         x,
+		Y:         y,
+		Radius:    6,
+		Life:      shockwaveLifeMax + 8,
+		MaxLife:   shockwaveLifeMax + 8,
+		Speed:     4.2,
 		Thickness: 2.2,
-		Color: color.RGBA{R: 220, G: 240, B: 255, A: 255},
+		Color:     color.RGBA{R: 220, G: 240, B: 255, A: 255},
 	})
 }
 
@@ -1040,14 +1113,14 @@ func (g *Game) spawnHugeExplosion(x, y float64) {
 		vy := math.Sin(angle) * speed
 		c := colors[g.Rand.Intn(len(colors))]
 		g.Particles = append(g.Particles, Particle{
-			X: x,
-			Y: y,
-			Vx: vx,
-			Vy: vy,
-			Life: particleLifeMax + 16,
+			X:       x,
+			Y:       y,
+			Vx:      vx,
+			Vy:      vy,
+			Life:    particleLifeMax + 16,
 			MaxLife: particleLifeMax + 16,
-			Color: c,
-			Size: 4 + g.Rand.Float64()*5,
+			Color:   c,
+			Size:    4 + g.Rand.Float64()*5,
 			Gravity: 0.05,
 		})
 	}
@@ -1055,14 +1128,14 @@ func (g *Game) spawnHugeExplosion(x, y float64) {
 	scale := hugeExplosionShockwaveScale
 	life := int(float64(shockwaveLifeMax)*scale + 0.5)
 	g.Shockwaves = append(g.Shockwaves, Shockwave{
-		X: x,
-		Y: y,
-		Radius: 8,
-		Life: life,
-		MaxLife: life,
-		Speed: 5.0,
+		X:         x,
+		Y:         y,
+		Radius:    8,
+		Life:      life,
+		MaxLife:   life,
+		Speed:     5.0,
 		Thickness: 2.8,
-		Color: color.RGBA{R: 240, G: 250, B: 255, A: 255},
+		Color:     color.RGBA{R: 240, G: 250, B: 255, A: 255},
 	})
 }
 
@@ -1072,17 +1145,17 @@ func (g *Game) spawnSmoke(x, y float64) {
 		{R: 90, G: 110, B: 130, A: 255},
 		{R: 160, G: 180, B: 200, A: 255},
 	}[g.Rand.Intn(3)]
-	vx := (g.Rand.Float64()-0.5) * 0.6
+	vx := (g.Rand.Float64() - 0.5) * 0.6
 	vy := 0.4 + g.Rand.Float64()*0.6
 	g.Particles = append(g.Particles, Particle{
-		X: x,
-		Y: y,
-		Vx: vx,
-		Vy: vy,
-		Life: smokeLifeMax,
+		X:       x,
+		Y:       y,
+		Vx:      vx,
+		Vy:      vy,
+		Life:    smokeLifeMax,
 		MaxLife: smokeLifeMax,
-		Color: c,
-		Size: 2 + g.Rand.Float64()*2,
+		Color:   c,
+		Size:    2 + g.Rand.Float64()*2,
 		Gravity: 0.02,
 	})
 }
@@ -1093,17 +1166,17 @@ func (g *Game) spawnSmokeBlack(x, y float64) {
 		{R: 20, G: 20, B: 20, A: 255},
 		{R: 50, G: 50, B: 50, A: 255},
 	}[g.Rand.Intn(3)]
-	vx := (g.Rand.Float64()-0.5) * 0.4
+	vx := (g.Rand.Float64() - 0.5) * 0.4
 	vy := 0.6 + g.Rand.Float64()*0.8
 	g.Particles = append(g.Particles, Particle{
-		X: x + (g.Rand.Float64()-0.5)*4,
-		Y: y + (g.Rand.Float64()-0.5)*4,
-		Vx: vx,
-		Vy: vy,
-		Life: smokeLifeMax + 6,
+		X:       x + (g.Rand.Float64()-0.5)*4,
+		Y:       y + (g.Rand.Float64()-0.5)*4,
+		Vx:      vx,
+		Vy:      vy,
+		Life:    smokeLifeMax + 6,
 		MaxLife: smokeLifeMax + 6,
-		Color: c,
-		Size: 4 + g.Rand.Float64()*6,
+		Color:   c,
+		Size:    4 + g.Rand.Float64()*6,
 		Gravity: 0.03,
 	})
 }
@@ -1136,14 +1209,14 @@ func (g *Game) startFormation() {
 		x, y := formationPos(side, row, col, 0)
 		spriteIndex := g.Rand.Intn(c64SpriteRows)
 		g.Formation.Enemies[i] = FlyEnemy{
-			Index: i,
-			Side: side,
+			Index:       i,
+			Side:        side,
 			SpriteIndex: spriteIndex,
-			X: x,
-			Y: y,
-			PrevX: x,
-			PrevY: y,
-			Angle: 0,
+			X:           x,
+			Y:           y,
+			PrevX:       x,
+			PrevY:       y,
+			Angle:       0,
 		}
 	}
 }
@@ -1193,12 +1266,12 @@ func (g *Game) resetLevelState() {
 			x := float64(invaderStartX + col*(invaderWidth+invaderGapX))
 			y := float64(invaderStartY + row*(invaderHeight+invaderGapY))
 			g.Invaders = append(g.Invaders, Invader{
-				X: x,
-				Y: y,
-				W: invaderWidth,
-				H: invaderHeight,
+				X:     x,
+				Y:     y,
+				W:     invaderWidth,
+				H:     invaderHeight,
 				Alive: true,
-				Type: row,
+				Type:  row,
 			})
 		}
 	}

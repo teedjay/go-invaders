@@ -7,6 +7,12 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 )
 
+type AmigaFont struct {
+	Glyphs map[rune]*ebiten.Image
+	W      int
+	H      int
+}
+
 func loadInvaderSprites() ([][]*ebiten.Image, error) {
 	sheet, _, err := ebitenutil.NewImageFromFile("/Users/thorej/opt/codex/go-invaders/assets/enemies.png")
 	if err != nil {
@@ -112,6 +118,37 @@ func loadImage(path string) (*ebiten.Image, error) {
 		return nil, err
 	}
 	return img, nil
+}
+
+func loadAmigaFont(path string) (*AmigaFont, error) {
+	img, _, err := ebitenutil.NewImageFromFile(path)
+	if err != nil {
+		return nil, err
+	}
+	cols := 9
+	rows := 4
+	cellW := img.Bounds().Dx() / cols
+	cellH := img.Bounds().Dy() / rows
+
+	grid := []string{
+		"ABCDEFGHI",
+		"JKLMNOPQR",
+		"STUVWXYZ1",
+		"234567890",
+	}
+
+	glyphs := make(map[rune]*ebiten.Image)
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			ch := rune(grid[r][c])
+			x0 := c * cellW
+			y0 := r * cellH
+			sub := img.SubImage(imageRect(x0, y0, cellW, cellH)).(*ebiten.Image)
+			glyphs[ch] = sub
+		}
+	}
+
+	return &AmigaFont{Glyphs: glyphs, W: cellW, H: cellH}, nil
 }
 
 func imageRect(x, y, w, h int) (r image.Rectangle) {
