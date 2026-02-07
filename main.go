@@ -103,6 +103,10 @@ type UFO struct {
 	Active bool
 	Frame int
 	FrameTick int
+	Crashing bool
+	CrashAngle float64
+	CrashRadius float64
+	CrashVy float64
 }
 
 type Game struct {
@@ -259,13 +263,31 @@ func (g *Game) Update() error {
 			}
 		}
 	} else {
-		g.UFO.X += g.UFO.Vx
+		if g.UFO.Crashing {
+			g.UFO.CrashAngle += 0.35
+			g.UFO.CrashRadius += 0.08
+			// Keep horizontal velocity while spiraling downward
+			g.UFO.X += g.UFO.Vx
+			g.UFO.X += math.Cos(g.UFO.CrashAngle) * g.UFO.CrashRadius
+			g.UFO.Y += g.UFO.CrashVy
+			g.UFO.Y += math.Sin(g.UFO.CrashAngle) * g.UFO.CrashRadius
+			g.UFO.CrashVy += 0.12
+			for i := 0; i < 6; i++ {
+				g.spawnSmokeBlack(g.UFO.X+float64(ufoWidth)/2, g.UFO.Y+float64(ufoHeight)/2)
+			}
+			if g.UFO.Y > screenHeight+ufoHeight {
+				g.UFO.Active = false
+				g.UFOSpawnTick = ufoSpawnFrames
+			}
+		} else {
+			g.UFO.X += g.UFO.Vx
+		}
 		g.UFO.FrameTick++
 		if g.UFO.FrameTick >= ufoFrameDelay {
 			g.UFO.FrameTick = 0
 			g.UFO.Frame = (g.UFO.Frame + 1) % ufoFrameCount
 		}
-		if g.UFO.X < -ufoWidth*2 || g.UFO.X > screenWidth+ufoWidth*2 {
+		if !g.UFO.Crashing && (g.UFO.X < -ufoWidth*2 || g.UFO.X > screenWidth+ufoWidth*2) {
 			g.UFO.Active = false
 			g.UFOSpawnTick = ufoSpawnFrames
 		}
@@ -276,6 +298,16 @@ func (g *Game) Update() error {
 		nextBullets := g.Bullets[:0]
 		for bi := range g.Bullets {
 			b := g.Bullets[bi]
+			if g.UFO.Active && !g.UFO.Crashing {
+				if rectsOverlap(b.X, b.Y, b.W, b.H, g.UFO.X, g.UFO.Y, ufoWidth, ufoHeight) {
+					g.spawnBigExplosion(g.UFO.X+float64(ufoWidth)/2, g.UFO.Y+float64(ufoHeight)/2)
+					g.UFO.Crashing = true
+					g.UFO.CrashAngle = 0
+					g.UFO.CrashRadius = 0.6
+					g.UFO.CrashVy = 1.2
+					continue
+				}
+			}
 			hit := false
 			for i := range g.Invaders {
 				inv := &g.Invaders[i]
@@ -375,6 +407,13 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// UFO
 	if g.UFO.Active && len(g.UFOSprites) == ufoFrameCount {
 		op := &ebiten.DrawImageOptions{}
+		if g.UFO.Crashing {
+			cx := float64(ufoWidth) / 2
+			cy := float64(ufoHeight) / 2
+			op.GeoM.Translate(-cx, -cy)
+			op.GeoM.Rotate(g.UFO.CrashAngle)
+			op.GeoM.Translate(cx, cy)
+		}
 		op.GeoM.Translate(g.UFO.X, g.UFO.Y)
 		screen.DrawImage(g.UFOSprites[g.UFO.Frame], op)
 	}
@@ -487,6 +526,46 @@ func (g *Game) spawnExplosion(x, y float64) {
 	})
 }
 
+func (g *Game) spawnBigExplosion(x, y float64) {
+	colors := []color.RGBA{
+		{R: 255, G: 240, B: 140, A: 255},
+		{R: 255, G: 180, B: 80, A: 255},
+		{R: 255, G: 120, B: 180, A: 255},
+		{R: 140, G: 220, B: 255, A: 255},
+		{R: 255, G: 90, B: 60, A: 255},
+	}
+	count := particleCount * 2
+	for i := 0; i < count; i++ {
+		angle := g.Rand.Float64() * 2 * math.Pi
+		speed := 2.0 + g.Rand.Float64()*4.0
+		vx := math.Cos(angle) * speed
+		vy := math.Sin(angle) * speed
+		c := colors[g.Rand.Intn(len(colors))]
+		g.Particles = append(g.Particles, Particle{
+			X: x,
+			Y: y,
+			Vx: vx,
+			Vy: vy,
+			Life: particleLifeMax + 10,
+			MaxLife: particleLifeMax + 10,
+			Color: c,
+			Size: 3 + g.Rand.Float64()*3,
+			Gravity: 0.04,
+		})
+	}
+
+	g.Shockwaves = append(g.Shockwaves, Shockwave{
+		X: x,
+		Y: y,
+		Radius: 6,
+		Life: shockwaveLifeMax + 8,
+		MaxLife: shockwaveLifeMax + 8,
+		Speed: 4.2,
+		Thickness: 2.2,
+		Color: color.RGBA{R: 220, G: 240, B: 255, A: 255},
+	})
+}
+
 func (g *Game) spawnSmoke(x, y float64) {
 	c := []color.RGBA{
 		{R: 120, G: 140, B: 160, A: 255},
@@ -505,6 +584,27 @@ func (g *Game) spawnSmoke(x, y float64) {
 		Color: c,
 		Size: 2 + g.Rand.Float64()*2,
 		Gravity: 0.02,
+	})
+}
+
+func (g *Game) spawnSmokeBlack(x, y float64) {
+	c := []color.RGBA{
+		{R: 30, G: 30, B: 30, A: 255},
+		{R: 20, G: 20, B: 20, A: 255},
+		{R: 50, G: 50, B: 50, A: 255},
+	}[g.Rand.Intn(3)]
+	vx := (g.Rand.Float64()-0.5) * 0.4
+	vy := 0.6 + g.Rand.Float64()*0.8
+	g.Particles = append(g.Particles, Particle{
+		X: x + (g.Rand.Float64()-0.5)*4,
+		Y: y + (g.Rand.Float64()-0.5)*4,
+		Vx: vx,
+		Vy: vy,
+		Life: smokeLifeMax + 6,
+		MaxLife: smokeLifeMax + 6,
+		Color: c,
+		Size: 4 + g.Rand.Float64()*6,
+		Gravity: 0.03,
 	})
 }
 
