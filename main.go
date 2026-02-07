@@ -74,8 +74,11 @@ type Invader struct {
 
 type Bullet struct {
 	X, Y float64
+	BaseX float64
 	W, H float64
 	Vy float64
+	Age int
+	Phase float64
 	FromPlayer bool
 	Active bool
 }
@@ -208,8 +211,11 @@ func (g *Game) Update() error {
 			Vy: bulletSpeed,
 			FromPlayer: true,
 			Active: true,
+			Age: 0,
+			Phase: g.Rand.Float64() * 2 * math.Pi,
 		}
-		b.X = g.Player.X + g.Player.W/2 - b.W/2
+		b.BaseX = g.Player.X + g.Player.W/2 - b.W/2
+		b.X = b.BaseX
 		b.Y = g.Player.Y - b.H
 		g.Bullets = append(g.Bullets, b)
 		g.Player.Cooldown = playerCooldownFrames
@@ -223,7 +229,15 @@ func (g *Game) Update() error {
 			if !b.Active {
 				continue
 			}
-			b.Y += b.Vy
+			b.Age++
+			t := float64(b.Age) / 30.0
+			if t > 1 {
+				t = 1
+			}
+			vy := b.Vy * (1 + t)
+			b.Y += vy
+			wobble := math.Sin(b.Phase+float64(b.Age)*0.4) * 3.5
+			b.X = b.BaseX + wobble
 			if b.Y+b.H < 0 {
 				continue
 			}
