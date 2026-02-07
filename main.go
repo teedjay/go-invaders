@@ -38,6 +38,7 @@ const (
 	invaderStartY = 60
 	invaderStepDown = 12
 	invaderSpeed = 1.0
+	invaderSpeedIncreaseFactor = 0.2
 
 	spriteFrameCount = 4
 	spriteFrameDelay = 20
@@ -191,6 +192,9 @@ type Game struct {
 	InvaderDir float64
 	GameOver bool
 	Win bool
+	InvaderSpeed float64
+	InvaderSpeedThreshold int
+	InvaderSpeedIncrease float64
 
 	InvaderSprites [][]*ebiten.Image
 	Frame int
@@ -400,7 +404,7 @@ func (g *Game) Update() error {
 
 	// Invader movement
 	minX, maxX := g.invaderBounds()
-	if maxX+invaderSpeed > screenWidth || minX-invaderSpeed < 0 {
+	if maxX+g.InvaderSpeed > screenWidth || minX-g.InvaderSpeed < 0 {
 		g.InvaderDir *= -1
 		for i := range g.Invaders {
 			if g.Invaders[i].Alive {
@@ -410,7 +414,7 @@ func (g *Game) Update() error {
 	}
 	for i := range g.Invaders {
 		if g.Invaders[i].Alive {
-			g.Invaders[i].X += g.InvaderDir * invaderSpeed
+			g.Invaders[i].X += g.InvaderDir * g.InvaderSpeed
 		}
 	}
 
@@ -573,6 +577,7 @@ func (g *Game) Update() error {
 					inv.DeathTick = 0
 					g.spawnExplosion(inv.X+inv.W/2, inv.Y+inv.H/2)
 					g.Score += 10
+					g.InvaderSpeed += g.InvaderSpeedIncrease
 					hit = true
 					break
 				}
@@ -597,6 +602,7 @@ func (g *Game) Update() error {
 	if aliveCount == 0 {
 		g.Win = true
 	}
+	// Speed up handled on each regular invader hit
 
 	// Level complete when everything is finished
 	if !g.LevelComplete && g.isLevelComplete() {
@@ -1428,4 +1434,7 @@ func (g *Game) resetLevelState() {
 		}
 	}
 	g.InvaderDir = 1
+	g.InvaderSpeed = 1.0
+	g.InvaderSpeedThreshold = (invaderCols * invaderRows) / 2
+	g.InvaderSpeedIncrease = float64(g.Level) / 10.0
 }
