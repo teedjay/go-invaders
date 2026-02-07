@@ -75,7 +75,10 @@ const (
 	hugeExplosionShockwaveScale = 1.8
 
 	playerAnimDelay = 6
-	playerSuperDurationFrames = 300
+	playerSuperDurationFrames = 480
+	playerSuperBlinkFirstFrames = 60
+	playerSuperBlinkLastFrames = 120
+	playerSuperBlinkPeriod = 6
 )
 
 type Player struct {
@@ -271,13 +274,17 @@ func (g *Game) Update() error {
 	}
 
 	// Movement
+	moveSpeed := g.Player.Speed
+	if g.Player.SuperFrames > 0 {
+		moveSpeed *= 2
+	}
 	movingLeft := ebiten.IsKeyPressed(ebiten.KeyLeft) || ebiten.IsKeyPressed(ebiten.KeyA)
 	movingRight := ebiten.IsKeyPressed(ebiten.KeyRight) || ebiten.IsKeyPressed(ebiten.KeyD)
 	if movingLeft {
-		g.Player.X -= g.Player.Speed
+		g.Player.X -= moveSpeed
 	}
 	if movingRight {
-		g.Player.X += g.Player.Speed
+		g.Player.X += moveSpeed
 	}
 	if g.Player.X < 0 {
 		g.Player.X = 0
@@ -302,7 +309,7 @@ func (g *Game) Update() error {
 		}
 		b.BaseX = g.Player.X + g.Player.W/2 - b.W/2
 		b.X = b.BaseX
-		b.Y = g.Player.Y - b.H
+		b.Y = g.Player.Y + g.Player.H
 		g.Bullets = append(g.Bullets, b)
 		g.Player.Cooldown = playerCooldownFrames
 	}
@@ -320,7 +327,11 @@ func (g *Game) Update() error {
 			if t > 1 {
 				t = 1
 			}
-			vy := b.Vy * (1 + t)
+			speedMultiplier := 1.0
+			if g.Player.SuperFrames > 0 {
+				speedMultiplier = 2.0
+			}
+			vy := b.Vy * (1 + t) * speedMultiplier
 			b.Y += vy
 			wobble := math.Sin(b.Phase+float64(b.Age)*0.4) * 3.5
 			b.X = b.BaseX + wobble
@@ -591,18 +602,6 @@ func (g *Game) Update() error {
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Fill(color.RGBA{R: 12, G: 16, B: 20, A: 255})
 
-	// Player
-	playerImg := g.playerSpriteImage()
-	if playerImg != nil {
-		op := &ebiten.DrawImageOptions{}
-		w := playerImg.Bounds().Dx()
-		h := playerImg.Bounds().Dy()
-		op.GeoM.Translate(g.Player.X-float64(w-int(g.Player.W))/2, g.Player.Y-float64(h-int(g.Player.H))/2)
-		screen.DrawImage(playerImg, op)
-	} else {
-		ebitenutil.DrawRect(screen, g.Player.X, g.Player.Y, g.Player.W, g.Player.H, color.RGBA{R: 40, G: 200, B: 120, A: 255})
-	}
-
 	// Invaders
 	for i := range g.Invaders {
 		if !g.Invaders[i].Alive && !g.Invaders[i].Dying {
@@ -703,6 +702,18 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		ebitenutil.DrawRect(screen, b.X-3, b.Y-4, b.W+6, b.H+8, color.RGBA{R: 120, G: 200, B: 255, A: 60})
 		ebitenutil.DrawRect(screen, b.X-1, b.Y-2, b.W+2, b.H+4, color.RGBA{R: 180, G: 230, B: 255, A: 120})
 		ebitenutil.DrawRect(screen, b.X, b.Y, b.W, b.H, color.RGBA{R: 240, G: 240, B: 255, A: 255})
+	}
+
+	// Player (draw last to stay on top)
+	playerImg := g.playerSpriteImage()
+	if playerImg != nil {
+		op := &ebiten.DrawImageOptions{}
+		w := playerImg.Bounds().Dx()
+		h := playerImg.Bounds().Dy()
+		op.GeoM.Translate(g.Player.X-float64(w-int(g.Player.W))/2, g.Player.Y-float64(h-int(g.Player.H))/2)
+		screen.DrawImage(playerImg, op)
+	} else {
+		ebitenutil.DrawRect(screen, g.Player.X, g.Player.Y, g.Player.W, g.Player.H, color.RGBA{R: 40, G: 200, B: 120, A: 255})
 	}
 
 	// Shockwaves
@@ -1054,7 +1065,13 @@ func loadImage(path string) (*ebiten.Image, error) {
 func (g *Game) playerSpriteImage() *ebiten.Image {
 	sets := g.PlayerSprites
 	if g.Player.SuperFrames > 0 {
-		sets = g.PlayerSuperSprites
+		blinkWindow := g.Player.SuperFrames > playerSuperDurationFrames-playerSuperBlinkFirstFrames ||
+			g.Player.SuperFrames <= playerSuperBlinkLastFrames
+		if blinkWindow && (g.Player.SuperFrames/playerSuperBlinkPeriod)%2 == 1 {
+			sets = g.PlayerSprites
+		} else {
+			sets = g.PlayerSuperSprites
+		}
 	}
 	if sets.M == nil {
 		return nil
