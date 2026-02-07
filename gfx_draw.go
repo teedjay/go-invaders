@@ -89,6 +89,15 @@ func drawStartImage(screen *ebiten.Image, img *ebiten.Image) {
 	screen.DrawImage(img, op)
 }
 
+func drawStarfield(screen *ebiten.Image, stars []Star) {
+	for _, s := range stars {
+		if s.Halo {
+			ebitenutil.DrawRect(screen, s.X-1, s.Y-1, s.Size+2, s.Size+2, color.RGBA{R: 120, G: 140, B: 180, A: 80})
+		}
+		ebitenutil.DrawRect(screen, s.X, s.Y, s.Size, s.Size, color.RGBA{R: 220, G: 230, B: 255, A: 200})
+	}
+}
+
 func drawHUD(screen *ebiten.Image, g *Game) {
 	scale := 3.0
 	left := fmt.Sprintf("SCORE: %d", g.Score)

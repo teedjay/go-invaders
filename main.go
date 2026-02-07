@@ -100,6 +100,13 @@ type Player struct {
 	AnimTick    int
 }
 
+type Star struct {
+	X, Y float64
+	Speed float64
+	Size float64
+	Halo bool
+}
+
 type Invader struct {
 	X, Y      float64
 	W, H      float64
@@ -242,6 +249,8 @@ type Game struct {
 	StartTick     int
 	StartFadeTick int
 	StartFont     *AmigaFont
+
+	Stars []Star
 }
 
 const (
@@ -277,6 +286,7 @@ func NewGame() (*Game, error) {
 	g.StartImage, _ = loadImage("/Users/thorej/opt/codex/go-invaders/assets/image.png")
 	g.StartFont, _ = loadAmigaFont("/Users/thorej/opt/codex/go-invaders/assets/amiga_font.png")
 	g.startMusic("/Users/thorej/opt/codex/go-invaders/music/codex_amiga_mstb.mod")
+	g.Stars = initStars(g.Rand, 160)
 	g.Player = Player{
 		X:        (screenWidth - playerWidth) / 2,
 		Y:        screenHeight - 60,
@@ -329,6 +339,9 @@ func (g *Game) Update() error {
 	// Start screen flow
 	if g.StartState != startStateDone {
 		g.StartTick++
+		if g.StartState == startStateScreen && g.StartTick >= 2520 {
+			g.StartTick = 0
+		}
 		if g.StartState == startStateScreen {
 			if ebiten.IsKeyPressed(ebiten.KeySpace) {
 				g.StartState = startStateFading
@@ -366,6 +379,11 @@ func (g *Game) Update() error {
 			g.resetLevelState()
 		}
 		return nil
+	}
+
+	// Starfield update (gameplay + level complete + fades)
+	if g.StartState == startStateDone {
+		updateStars(g.Stars)
 	}
 
 	// Hidden: kill all regular aliens (F)
@@ -787,16 +805,22 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	if g.StartState != startStateDone {
 		drawStartImage(screen, g.StartImage)
 		alpha := 0.0
-		if g.StartTick >= 120 {
+		if g.StartTick >= 120 && g.StartTick < 180 {
 			alpha = float64(g.StartTick-120) / 60.0
+		} else if g.StartTick >= 180 && g.StartTick < 1800 {
+			alpha = 1.0
+		} else if g.StartTick >= 1800 && g.StartTick < 1920 {
+			alpha = 1.0 - float64(g.StartTick-1800)/120.0
 		}
 		var waveAmp float64
-		if g.StartTick >= 300 {
+		if g.StartTick >= 300 && g.StartTick < 600 {
 			t := float64(g.StartTick-300) / 300.0
-			if t > 1 {
-				t = 1
-			}
 			waveAmp = 50 * t
+		} else if g.StartTick >= 600 && g.StartTick < 1200 {
+			waveAmp = 50
+		} else if g.StartTick >= 1200 && g.StartTick < 1500 {
+			t := float64(g.StartTick-1200) / 300.0
+			waveAmp = 50 * (1.0 - t)
 		}
 		drawAmigaText(screen, g.StartFont, "GO INVADERS", screenWidth/2, int(float64(screenHeight)*0.2), alpha, waveAmp, g.StartTick)
 		if g.StartTick >= startPromptDelayFrames {
@@ -812,6 +836,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 		return
 	}
+
+	drawStarfield(screen, g.Stars)
 
 	// Invaders
 	for i := range g.Invaders {
