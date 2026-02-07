@@ -173,6 +173,47 @@ func drawAmigaText(screen *ebiten.Image, font *AmigaFont, text string, centerX, 
 	}
 }
 
+func drawAmigaTextZoom(screen *ebiten.Image, font *AmigaFont, text string, centerX, finalY int, tick, duration int, startScale, endScale float64) {
+	if font == nil || font.W == 0 {
+		return
+	}
+	if duration <= 0 {
+		duration = 1
+	}
+	spacing := 1
+	finalAdvance := (float64(font.W) + float64(spacing)) * endScale
+	totalW := finalAdvance*float64(len(text)) - float64(spacing)*endScale
+	x := float64(centerX) - totalW/2
+	startY := -float64(font.H)*startScale - 10
+	charDelay := 4
+
+	for i, r := range text {
+		if r == ' ' || font.Glyphs[r] == nil {
+			x += finalAdvance
+			continue
+		}
+		localTick := tick - i*charDelay
+		if localTick < 0 {
+			x += finalAdvance
+			continue
+		}
+		t := float64(localTick) / float64(duration)
+		if t > 1 {
+			t = 1
+		}
+		ease := easeOutQuad(t)
+		scale := startScale + (endScale-startScale)*ease
+		y := startY + (float64(finalY)-startY)*ease
+		offsetX := (finalAdvance - (float64(font.W)+float64(spacing))*scale) / 2
+
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Scale(scale, scale)
+		op.GeoM.Translate(x+offsetX, y)
+		screen.DrawImage(font.Glyphs[r], op)
+		x += finalAdvance
+	}
+}
+
 func (g *Game) playerSpriteImage() *ebiten.Image {
 	sets := g.PlayerSprites
 	if g.Player.SuperFrames > 0 {

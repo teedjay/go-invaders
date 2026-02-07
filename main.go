@@ -81,6 +81,10 @@ const (
 	fadeBlackFrames            = 30
 	startPromptDelayFrames     = 600
 	startFadeFrames            = 120
+	gameOverZoomFrames         = 120
+	gameOverShipFadeFrames     = 120
+	gameOverWaitFrames         = 900
+	gameOverFadeFrames         = 120
 
 	playerAnimDelay             = 6
 	playerSuperDurationFrames   = 480
@@ -232,6 +236,11 @@ type Game struct {
 	LevelState    int
 	FadeTick      int
 	Lives         int
+	GameOverTick  int
+	GameOverTriggered bool
+	GameOverWaitTick  int
+	GameOverFadeTick  int
+	GameOverFading    bool
 
 	KillAllActive bool
 	KillAllTick   int
@@ -333,12 +342,45 @@ func NewGame() (*Game, error) {
 
 func (g *Game) Update() error {
 	if g.GameOver {
+		if !g.GameOverTriggered {
+			g.GameOverTriggered = true
+			g.GameOverTick = 0
+			g.GameOverWaitTick = 0
+			g.GameOverFadeTick = 0
+			g.GameOverFading = false
+			g.stopUFOLoop()
+			g.spawnGameOverExplosion(g.Player.X+g.Player.W/2, g.Player.Y+g.Player.H/2)
+		}
+		g.GameOverTick++
+		if !g.GameOverFading {
+			if g.GameOverTick >= gameOverZoomFrames {
+				g.GameOverWaitTick++
+				if g.GameOverWaitTick >= gameOverWaitFrames || ebiten.IsKeyPressed(ebiten.KeySpace) {
+					g.GameOverFading = true
+					g.GameOverFadeTick = 0
+				}
+			}
+		} else {
+			g.GameOverFadeTick++
+			if g.GameOverFadeTick >= gameOverFadeFrames {
+				g.resetToStartScreen()
+			}
+		}
+		if g.StartState == startStateDone {
+			updateStars(g.Stars)
+		}
+		g.updateEffects()
 		return nil
 	}
 
 	// Start screen flow
 	if g.updateStartScreen() {
 		return nil
+	}
+
+	// Manual end-game trigger
+	if ebiten.IsKeyPressed(ebiten.KeyE) {
+		g.GameOver = true
 	}
 
 	// Fade transitions
@@ -724,45 +766,7 @@ func (g *Game) Update() error {
 		}
 	}
 
-	// Particles update
-	if len(g.Particles) > 0 {
-		next := g.Particles[:0]
-		for i := range g.Particles {
-			p := g.Particles[i]
-			p.X += p.Vx
-			p.Y += p.Vy
-			p.Vy += p.Gravity
-			p.Life--
-			if p.Life > 0 {
-				next = append(next, p)
-			}
-		}
-		g.Particles = next
-	}
-
-	// Invader death animations
-	for i := range g.Invaders {
-		if g.Invaders[i].Dying {
-			g.Invaders[i].DeathTick++
-			if g.Invaders[i].DeathTick >= deathAnimFrames {
-				g.Invaders[i].Dying = false
-			}
-		}
-	}
-
-	// Shockwaves update
-	if len(g.Shockwaves) > 0 {
-		next := g.Shockwaves[:0]
-		for i := range g.Shockwaves {
-			s := g.Shockwaves[i]
-			s.Radius += s.Speed
-			s.Life--
-			if s.Life > 0 {
-				next = append(next, s)
-			}
-		}
-		g.Shockwaves = next
-	}
+	g.updateEffects()
 
 	// Animation tick
 	g.FrameTick++
@@ -886,15 +890,24 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 
 	// Player (draw last to stay on top)
+	playerAlpha := 1.0
+	if g.GameOver {
+		t := float64(g.GameOverTick) / float64(gameOverShipFadeFrames)
+		if t > 1 {
+			t = 1
+		}
+		playerAlpha = 1 - t
+	}
 	playerImg := g.playerSpriteImage()
 	if playerImg != nil {
 		op := &ebiten.DrawImageOptions{}
 		w := playerImg.Bounds().Dx()
 		h := playerImg.Bounds().Dy()
 		op.GeoM.Translate(g.Player.X-float64(w-int(g.Player.W))/2, g.Player.Y-float64(h-int(g.Player.H))/2)
+		op.ColorM.Scale(1, 1, 1, playerAlpha)
 		screen.DrawImage(playerImg, op)
 	} else {
-		ebitenutil.DrawRect(screen, g.Player.X, g.Player.Y, g.Player.W, g.Player.H, color.RGBA{R: 40, G: 200, B: 120, A: 255})
+		ebitenutil.DrawRect(screen, g.Player.X, g.Player.Y, g.Player.W, g.Player.H, color.RGBA{R: 40, G: 200, B: 120, A: uint8(255 * playerAlpha)})
 	}
 
 	// Shockwaves
@@ -921,7 +934,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	drawHUD(screen, g)
 	if g.GameOver {
-		ebitenutil.DebugPrintAt(screen, "GAME OVER", screenWidth/2-40, screenHeight/2-10)
+		drawAmigaTextZoom(screen, g.StartFont, "GAME OVER", screenWidth/2, int(float64(screenHeight)*0.45), g.GameOverTick, gameOverZoomFrames, 4.0, 2.0)
 	}
 
 	// GREAT WORK banner
@@ -955,6 +968,14 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 		// Start from white, fade to black
 		drawFadeOverlay(screen, 1, 1, 1, 1.0)
+		drawFadeOverlay(screen, 0, 0, 0, alpha)
+	}
+
+	if g.GameOver && g.GameOverFading {
+		alpha := float64(g.GameOverFadeTick) / float64(gameOverFadeFrames)
+		if alpha > 1 {
+			alpha = 1
+		}
 		drawFadeOverlay(screen, 0, 0, 0, alpha)
 	}
 }
@@ -1112,6 +1133,57 @@ func (g *Game) spawnHugeExplosion(x, y float64) {
 	})
 }
 
+func (g *Game) spawnGameOverExplosion(x, y float64) {
+	g.playSfx(g.Sfx.Explosion, sfxVolume)
+	colors := []color.RGBA{
+		{R: 255, G: 250, B: 200, A: 255},
+		{R: 255, G: 210, B: 120, A: 255},
+		{R: 255, G: 160, B: 90, A: 255},
+		{R: 200, G: 240, B: 255, A: 255},
+		{R: 255, G: 120, B: 80, A: 255},
+	}
+	count := particleCount * hugeExplosionParticleMultiplier * 3
+	for i := 0; i < count; i++ {
+		angle := g.Rand.Float64() * 2 * math.Pi
+		speed := 3.0 + g.Rand.Float64()*7.5
+		vx := math.Cos(angle) * speed
+		vy := math.Sin(angle) * speed
+		c := colors[g.Rand.Intn(len(colors))]
+		g.Particles = append(g.Particles, Particle{
+			X:       x,
+			Y:       y,
+			Vx:      vx,
+			Vy:      vy,
+			Life:    particleLifeMax + 30,
+			MaxLife: particleLifeMax + 30,
+			Color:   c,
+			Size:    5 + g.Rand.Float64()*7,
+			Gravity: 0.05,
+		})
+	}
+
+	for i := 0; i < 3; i++ {
+		scale := 1.6 + float64(i)*0.3
+		life := int(float64(shockwaveLifeMax)*scale + 0.5)
+		g.Shockwaves = append(g.Shockwaves, Shockwave{
+			X:         x,
+			Y:         y,
+			Radius:    10 + float64(i)*4,
+			Life:      life,
+			MaxLife:   life,
+			Speed:     6.0 + float64(i)*1.2,
+			Thickness: 3.2 + float64(i)*0.6,
+			Color:     color.RGBA{R: 250, G: 255, B: 255, A: 255},
+		})
+	}
+
+	for i := 0; i < 140; i++ {
+		ox := (g.Rand.Float64() - 0.5) * 40
+		oy := (g.Rand.Float64() - 0.5) * 30
+		g.spawnSmokeBlack(x+ox, y+oy)
+	}
+}
+
 func (g *Game) spawnSmoke(x, y float64) {
 	c := []color.RGBA{
 		{R: 120, G: 140, B: 160, A: 255},
@@ -1152,6 +1224,39 @@ func (g *Game) spawnSmokeBlack(x, y float64) {
 		Size:    4 + g.Rand.Float64()*6,
 		Gravity: 0.03,
 	})
+}
+
+func (g *Game) resetToStartScreen() {
+	g.GameOver = false
+	g.GameOverTriggered = false
+	g.GameOverTick = 0
+	g.GameOverWaitTick = 0
+	g.GameOverFadeTick = 0
+	g.GameOverFading = false
+
+	g.Level = 1
+	g.Score = 0
+	g.Lives = 3
+	g.LevelComplete = false
+	g.CompleteTick = 0
+	g.LevelState = levelStatePlaying
+	g.FadeTick = 0
+
+	g.Bullets = g.Bullets[:0]
+	g.Particles = g.Particles[:0]
+	g.Shockwaves = g.Shockwaves[:0]
+	g.UFO = UFO{}
+	g.UFOSpawnTick = ufoSpawnFrames
+	g.Formation = Formation{Active: false, Tick: 0, Duration: formationDurationFrames}
+	g.FormationSpawnTick = formationInitialDelayFrames
+
+	g.StartState = startStateScreen
+	g.StartTick = 0
+	g.StartFadeTick = 0
+	g.startMusic("/Users/thorej/opt/codex/go-invaders/music/codex_amiga_mstb.mod")
+	g.setMusicVolume(0.3)
+
+	g.resetLevelState()
 }
 
 func main() {
@@ -1252,4 +1357,46 @@ func (g *Game) resetLevelState() {
 	g.InvaderSpeed = 1.0
 	g.InvaderSpeedThreshold = (invaderCols * invaderRows) / 2
 	g.InvaderSpeedIncrease = float64(g.Level) / 5.0
+}
+
+func (g *Game) updateEffects() {
+	// Particles update
+	if len(g.Particles) > 0 {
+		next := g.Particles[:0]
+		for i := range g.Particles {
+			p := g.Particles[i]
+			p.X += p.Vx
+			p.Y += p.Vy
+			p.Vy += p.Gravity
+			p.Life--
+			if p.Life > 0 {
+				next = append(next, p)
+			}
+		}
+		g.Particles = next
+	}
+
+	// Invader death animations
+	for i := range g.Invaders {
+		if g.Invaders[i].Dying {
+			g.Invaders[i].DeathTick++
+			if g.Invaders[i].DeathTick >= deathAnimFrames {
+				g.Invaders[i].Dying = false
+			}
+		}
+	}
+
+	// Shockwaves update
+	if len(g.Shockwaves) > 0 {
+		next := g.Shockwaves[:0]
+		for i := range g.Shockwaves {
+			s := g.Shockwaves[i]
+			s.Radius += s.Speed
+			s.Life--
+			if s.Life > 0 {
+				next = append(next, s)
+			}
+		}
+		g.Shockwaves = next
+	}
 }
