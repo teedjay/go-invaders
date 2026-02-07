@@ -73,6 +73,9 @@ const (
 	formationShotSpeedXMax = 2.5
 	hugeExplosionParticleMultiplier = 4
 	hugeExplosionShockwaveScale = 1.8
+
+	playerAnimDelay = 6
+	playerSuperDurationFrames = 300
 )
 
 type Player struct {
@@ -80,6 +83,10 @@ type Player struct {
 	W, H  float64
 	Speed float64
 	Cooldown int
+	SuperFrames int
+	AnimDir int
+	AnimStep int
+	AnimTick int
 }
 
 type Invader struct {
@@ -156,6 +163,14 @@ type Formation struct {
 	Side int
 }
 
+type PlayerSpriteSet struct {
+	M  *ebiten.Image
+	L1 *ebiten.Image
+	L2 *ebiten.Image
+	R1 *ebiten.Image
+	R2 *ebiten.Image
+}
+
 type Game struct {
 	Player   Player
 	Invaders []Invader
@@ -183,6 +198,9 @@ type Game struct {
 	FormationSpawnTick int
 	C64Frame int
 	C64FrameTick int
+
+	PlayerSprites PlayerSpriteSet
+	PlayerSuperSprites PlayerSpriteSet
 }
 
 func NewGame() (*Game, error) {
@@ -217,6 +235,17 @@ func NewGame() (*Game, error) {
 	g.FormationSpawnTick = formationInitialDelayFrames
 	g.Formation = Formation{Active: false, Tick: 0, Duration: formationDurationFrames}
 
+	playerSprites, err := loadPlayerSprites()
+	if err != nil {
+		return nil, err
+	}
+	playerSuperSprites, err := loadPlayerSuperSprites()
+	if err != nil {
+		return nil, err
+	}
+	g.PlayerSprites = playerSprites
+	g.PlayerSuperSprites = playerSuperSprites
+
 	g.Invaders = make([]Invader, 0, invaderCols*invaderRows)
 	for row := 0; row < invaderRows; row++ {
 		for col := 0; col < invaderCols; col++ {
@@ -242,10 +271,12 @@ func (g *Game) Update() error {
 	}
 
 	// Movement
-	if ebiten.IsKeyPressed(ebiten.KeyLeft) || ebiten.IsKeyPressed(ebiten.KeyA) {
+	movingLeft := ebiten.IsKeyPressed(ebiten.KeyLeft) || ebiten.IsKeyPressed(ebiten.KeyA)
+	movingRight := ebiten.IsKeyPressed(ebiten.KeyRight) || ebiten.IsKeyPressed(ebiten.KeyD)
+	if movingLeft {
 		g.Player.X -= g.Player.Speed
 	}
-	if ebiten.IsKeyPressed(ebiten.KeyRight) || ebiten.IsKeyPressed(ebiten.KeyD) {
+	if movingRight {
 		g.Player.X += g.Player.Speed
 	}
 	if g.Player.X < 0 {
@@ -365,6 +396,33 @@ func (g *Game) Update() error {
 		}
 	}
 
+	// Player animation and super mode timer
+	desiredDir := 0
+	if movingLeft && !movingRight {
+		desiredDir = -1
+	} else if movingRight && !movingLeft {
+		desiredDir = 1
+	}
+	g.Player.AnimTick++
+	if g.Player.AnimTick >= playerAnimDelay {
+		g.Player.AnimTick = 0
+		if desiredDir != 0 {
+			g.Player.AnimDir = desiredDir
+			if g.Player.AnimStep == 0 {
+				g.Player.AnimStep = 1
+			} else if g.Player.AnimStep == 1 {
+				g.Player.AnimStep = 2
+			} else {
+				g.Player.AnimStep = 1
+			}
+		} else if g.Player.AnimStep > 0 {
+			g.Player.AnimStep--
+		}
+	}
+	if g.Player.SuperFrames > 0 {
+		g.Player.SuperFrames--
+	}
+
 	// C64 formation spawn + movement
 	if !g.Formation.Active {
 		g.FormationSpawnTick--
@@ -439,6 +497,7 @@ func (g *Game) Update() error {
 					g.UFO.CrashAngle = 0
 					g.UFO.CrashRadius = 0.6
 					g.UFO.CrashVy = 1.2
+					g.Player.SuperFrames = playerSuperDurationFrames
 					continue
 				}
 			}
@@ -533,7 +592,16 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Fill(color.RGBA{R: 12, G: 16, B: 20, A: 255})
 
 	// Player
-	ebitenutil.DrawRect(screen, g.Player.X, g.Player.Y, g.Player.W, g.Player.H, color.RGBA{R: 40, G: 200, B: 120, A: 255})
+	playerImg := g.playerSpriteImage()
+	if playerImg != nil {
+		op := &ebiten.DrawImageOptions{}
+		w := playerImg.Bounds().Dx()
+		h := playerImg.Bounds().Dy()
+		op.GeoM.Translate(g.Player.X-float64(w-int(g.Player.W))/2, g.Player.Y-float64(h-int(g.Player.H))/2)
+		screen.DrawImage(playerImg, op)
+	} else {
+		ebitenutil.DrawRect(screen, g.Player.X, g.Player.Y, g.Player.W, g.Player.H, color.RGBA{R: 40, G: 200, B: 120, A: 255})
+	}
 
 	// Invaders
 	for i := range g.Invaders {
@@ -923,8 +991,90 @@ func loadC64Sprites() ([][]*ebiten.Image, error) {
 	return frames, nil
 }
 
+func loadPlayerSprites() (PlayerSpriteSet, error) {
+	m, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/Player/player_b_m.png")
+	if err != nil {
+		return PlayerSpriteSet{}, err
+	}
+	l1, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/Player/player_b_l1.png")
+	if err != nil {
+		return PlayerSpriteSet{}, err
+	}
+	l2, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/Player/player_b_l2.png")
+	if err != nil {
+		return PlayerSpriteSet{}, err
+	}
+	r1, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/Player/player_b_r1.png")
+	if err != nil {
+		return PlayerSpriteSet{}, err
+	}
+	r2, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/Player/player_b_r2.png")
+	if err != nil {
+		return PlayerSpriteSet{}, err
+	}
+	return PlayerSpriteSet{M: m, L1: l1, L2: l2, R1: r1, R2: r2}, nil
+}
+
+func loadPlayerSuperSprites() (PlayerSpriteSet, error) {
+	m, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/Player/player_r_m.png")
+	if err != nil {
+		return PlayerSpriteSet{}, err
+	}
+	l1, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/Player/player_r_l1.png")
+	if err != nil {
+		return PlayerSpriteSet{}, err
+	}
+	l2, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/Player/player_r_l2.png")
+	if err != nil {
+		return PlayerSpriteSet{}, err
+	}
+	r1, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/Player/player_r_r1.png")
+	if err != nil {
+		return PlayerSpriteSet{}, err
+	}
+	r2, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/Player/player_r_r2.png")
+	if err != nil {
+		return PlayerSpriteSet{}, err
+	}
+	return PlayerSpriteSet{M: m, L1: l1, L2: l2, R1: r1, R2: r2}, nil
+}
+
 func imageRect(x, y, w, h int) (r image.Rectangle) {
 	return image.Rect(x, y, x+w, y+h)
+}
+
+func loadImage(path string) (*ebiten.Image, error) {
+	img, _, err := ebitenutil.NewImageFromFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return img, nil
+}
+
+func (g *Game) playerSpriteImage() *ebiten.Image {
+	sets := g.PlayerSprites
+	if g.Player.SuperFrames > 0 {
+		sets = g.PlayerSuperSprites
+	}
+	if sets.M == nil {
+		return nil
+	}
+	if g.Player.AnimStep == 0 {
+		return sets.M
+	}
+	if g.Player.AnimDir < 0 {
+		if g.Player.AnimStep == 1 {
+			return sets.L1
+		}
+		return sets.L2
+	}
+	if g.Player.AnimDir > 0 {
+		if g.Player.AnimStep == 1 {
+			return sets.R1
+		}
+		return sets.R2
+	}
+	return sets.M
 }
 
 func (g *Game) startFormation() {
