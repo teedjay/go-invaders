@@ -54,6 +54,15 @@ const (
 	ufoFrameDelay = 8
 	ufoSpawnFrames = 600
 	ufoSpeed = 5.5
+
+	c64SpriteWidth = 32
+	c64SpriteHeight = 24
+	c64SpriteRows = 8
+	c64FrameCount = 4
+	c64FrameDelay = 8
+	formationDurationFrames = 180
+	formationSpawnFrames = 360
+	formationLoopRadius = 180.0
 )
 
 type Player struct {
@@ -115,6 +124,25 @@ type UFO struct {
 	CrashVy float64
 }
 
+type FlyEnemy struct {
+	X, Y float64
+	PrevX, PrevY float64
+	Angle float64
+	Frame int
+	FrameTick int
+	Index int
+	Side int
+	SpriteIndex int
+}
+
+type Formation struct {
+	Active bool
+	Tick int
+	Duration int
+	Enemies [16]FlyEnemy
+	Side int
+}
+
 type Game struct {
 	Player   Player
 	Invaders []Invader
@@ -136,6 +164,12 @@ type Game struct {
 	UFOSprites []*ebiten.Image
 	UFO UFO
 	UFOSpawnTick int
+
+	C64Sprites [][]*ebiten.Image
+	Formation Formation
+	FormationSpawnTick int
+	C64Frame int
+	C64FrameTick int
 }
 
 func NewGame() (*Game, error) {
@@ -161,6 +195,14 @@ func NewGame() (*Game, error) {
 	}
 	g.UFOSprites = ufoSprites
 	g.UFOSpawnTick = ufoSpawnFrames
+
+	c64Sprites, err := loadC64Sprites()
+	if err != nil {
+		return nil, err
+	}
+	g.C64Sprites = c64Sprites
+	g.FormationSpawnTick = 0
+	g.Formation = Formation{Active: false, Tick: 0, Duration: formationDurationFrames}
 
 	g.Invaders = make([]Invader, 0, invaderCols*invaderRows)
 	for row := 0; row < invaderRows; row++ {
@@ -307,6 +349,36 @@ func (g *Game) Update() error {
 		if !g.UFO.Crashing && (g.UFO.X < -ufoWidth*2 || g.UFO.X > screenWidth+ufoWidth*2) {
 			g.UFO.Active = false
 			g.UFOSpawnTick = ufoSpawnFrames
+		}
+	}
+
+	// C64 formation spawn + movement
+	if !g.Formation.Active {
+		g.FormationSpawnTick--
+		if g.FormationSpawnTick <= 0 {
+			g.startFormation()
+		}
+	} else {
+		g.Formation.Tick++
+		t := float64(g.Formation.Tick) / float64(g.Formation.Duration)
+		if t >= 1.0 {
+			g.Formation.Active = false
+			g.FormationSpawnTick = formationSpawnFrames
+		} else {
+			for i := range g.Formation.Enemies {
+				e := &g.Formation.Enemies[i]
+				e.PrevX = e.X
+				e.PrevY = e.Y
+				row := e.Index / 4
+				col := e.Index % 4
+				e.X, e.Y = formationPos(e.Side, row, col, t)
+				e.Angle = math.Atan2(e.Y-e.PrevY, e.X-e.PrevX)
+			}
+			g.C64FrameTick++
+			if g.C64FrameTick >= c64FrameDelay {
+				g.C64FrameTick = 0
+				g.C64Frame = (g.C64Frame + 1) % c64FrameCount
+			}
 		}
 	}
 
@@ -475,6 +547,40 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 		op.GeoM.Translate(g.UFO.X, g.UFO.Y)
 		screen.DrawImage(g.UFOSprites[g.UFO.Frame], op)
+	}
+
+	// C64 formation
+	if g.Formation.Active && len(g.C64Sprites) == c64SpriteRows {
+		t := float64(g.Formation.Tick) / float64(g.Formation.Duration)
+		if t < 0 {
+			t = 0
+		}
+		if t > 1 {
+			t = 1
+		}
+		scale := 1.0
+		if t < 0.45 {
+			scale = 1.0 + 3.0*easeInOutQuad(t/0.45)
+		} else if t < 0.7 {
+			scale = 4.0
+		} else {
+			scale = 4.0 - 3.0*easeInOutQuad((t-0.7)/0.3)
+		}
+		for i := range g.Formation.Enemies {
+			e := &g.Formation.Enemies[i]
+			if e.SpriteIndex < 0 || e.SpriteIndex >= len(g.C64Sprites) {
+				continue
+			}
+			op := &ebiten.DrawImageOptions{}
+			cx := float64(c64SpriteWidth) / 2
+			cy := float64(c64SpriteHeight) / 2
+			op.GeoM.Translate(-cx, -cy)
+			op.GeoM.Scale(scale, scale)
+			op.GeoM.Rotate(e.Angle)
+			op.GeoM.Translate(cx, cy)
+			op.GeoM.Translate(e.X, e.Y)
+			screen.DrawImage(g.C64Sprites[e.SpriteIndex][g.C64Frame], op)
+		}
 	}
 
 	// Bullet
@@ -712,6 +818,106 @@ func loadUFOSprites() ([]*ebiten.Image, error) {
 	return frames, nil
 }
 
+func loadC64Sprites() ([][]*ebiten.Image, error) {
+	sheet, _, err := ebitenutil.NewImageFromFile("/Users/thorej/opt/codex/go-invaders/assets/c64_enemies.png")
+	if err != nil {
+		return nil, err
+	}
+	frames := make([][]*ebiten.Image, c64SpriteRows)
+	for row := 0; row < c64SpriteRows; row++ {
+		frames[row] = make([]*ebiten.Image, c64FrameCount)
+		for frame := 0; frame < c64FrameCount; frame++ {
+			x0 := frame * c64SpriteWidth
+			y0 := row * c64SpriteHeight
+			sub := sheet.SubImage(imageRect(x0, y0, c64SpriteWidth, c64SpriteHeight)).(*ebiten.Image)
+			frames[row][frame] = sub
+		}
+	}
+	return frames, nil
+}
+
 func imageRect(x, y, w, h int) (r image.Rectangle) {
 	return image.Rect(x, y, x+w, y+h)
+}
+
+func (g *Game) startFormation() {
+	g.Formation.Active = true
+	g.Formation.Tick = 0
+	g.Formation.Duration = formationDurationFrames
+	if g.Formation.Side == 0 {
+		g.Formation.Side = 1
+	} else {
+		g.Formation.Side = 0
+	}
+	for i := 0; i < len(g.Formation.Enemies); i++ {
+		row := i / 4
+		col := i % 4
+		side := g.Formation.Side
+		x, y := formationPos(side, row, col, 0)
+		spriteIndex := g.Rand.Intn(c64SpriteRows)
+		g.Formation.Enemies[i] = FlyEnemy{
+			Index: i,
+			Side: side,
+			SpriteIndex: spriteIndex,
+			X: x,
+			Y: y,
+			PrevX: x,
+			PrevY: y,
+			Angle: 0,
+		}
+	}
+}
+
+func formationPos(side, row, col int, t float64) (float64, float64) {
+	// Side: 0 = left -> right, 1 = right -> left
+	offsetY := float64(row) * 48
+	offsetX := float64(col) * 48 - 72
+
+	startX := -float64(c64SpriteWidth) - 20
+	endX := float64(screenWidth) + float64(c64SpriteWidth) + 20
+	if side == 1 {
+		startX, endX = endX, startX
+	}
+	start := vec2{X: startX, Y: 40 + offsetY}
+	mid := vec2{X: float64(screenWidth)/2 - offsetX, Y: 140 + offsetY*0.2}
+	if side == 1 {
+		mid.X = float64(screenWidth)/2 + offsetX
+	}
+	exit := vec2{X: endX, Y: 80 + offsetY}
+
+	if t < 0.45 {
+		p := easeInOutQuad(t / 0.45)
+		return lerp(start, mid, p).X, lerp(start, mid, p).Y
+	}
+	if t < 0.7 {
+		p := easeInOutQuad((t - 0.45) / 0.25)
+		angle := p * 8 * math.Pi
+		if side == 1 {
+			angle = -angle
+		}
+		cx := mid.X
+		cy := mid.Y
+		r := formationLoopRadius + offsetY*0.1
+		return cx + math.Cos(angle)*r, cy + math.Sin(angle)*r
+	}
+	p := easeInOutQuad((t - 0.7) / 0.3)
+	return lerp(mid, exit, p).X, lerp(mid, exit, p).Y
+}
+
+type vec2 struct {
+	X, Y float64
+}
+
+func lerp(a, b vec2, t float64) vec2 {
+	return vec2{
+		X: a.X + (b.X-a.X)*t,
+		Y: a.Y + (b.Y-a.Y)*t,
+	}
+}
+
+func easeInOutQuad(t float64) float64 {
+	if t < 0.5 {
+		return 2 * t * t
+	}
+	return 1 - math.Pow(-2*t+2, 2)/2
 }
