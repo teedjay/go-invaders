@@ -46,6 +46,13 @@ const (
 	smokeSpawnPerFrame = 2
 	shockwaveLifeMax = 18
 	shockwaveSegments = 36
+
+	ufoWidth = 64
+	ufoHeight = 32
+	ufoFrameCount = 8
+	ufoFrameDelay = 8
+	ufoSpawnFrames = 600
+	ufoSpeed = 5.5
 )
 
 type Player struct {
@@ -90,10 +97,18 @@ type Shockwave struct {
 	Color color.RGBA
 }
 
+type UFO struct {
+	X, Y float64
+	Vx float64
+	Active bool
+	Frame int
+	FrameTick int
+}
+
 type Game struct {
 	Player   Player
 	Invaders []Invader
-	Bullet   Bullet
+	Bullets  []Bullet
 	Score    int
 
 	InvaderDir float64
@@ -107,6 +122,10 @@ type Game struct {
 	Particles []Particle
 	Shockwaves []Shockwave
 	Rand *rand.Rand
+
+	UFOSprites []*ebiten.Image
+	UFO UFO
+	UFOSpawnTick int
 }
 
 func NewGame() (*Game, error) {
@@ -120,18 +139,18 @@ func NewGame() (*Game, error) {
 		Speed: playerSpeed,
 		Cooldown: 0,
 	}
-	g.Bullet = Bullet{
-		W: bulletWidth,
-		H: bulletHeight,
-		Vy: bulletSpeed,
-		FromPlayer: true,
-		Active: false,
-	}
+	g.Bullets = make([]Bullet, 0, 5)
 	sprites, err := loadInvaderSprites()
 	if err != nil {
 		return nil, err
 	}
 	g.InvaderSprites = sprites
+	ufoSprites, err := loadUFOSprites()
+	if err != nil {
+		return nil, err
+	}
+	g.UFOSprites = ufoSprites
+	g.UFOSpawnTick = ufoSpawnFrames
 
 	g.Invaders = make([]Invader, 0, invaderCols*invaderRows)
 	for row := 0; row < invaderRows; row++ {
@@ -175,25 +194,41 @@ func (g *Game) Update() error {
 	if g.Player.Cooldown > 0 {
 		g.Player.Cooldown--
 	}
-	if ebiten.IsKeyPressed(ebiten.KeySpace) && g.Player.Cooldown == 0 && !g.Bullet.Active {
-		g.Bullet.Active = true
-		g.Bullet.X = g.Player.X + g.Player.W/2 - g.Bullet.W/2
-		g.Bullet.Y = g.Player.Y - g.Bullet.H
+	if ebiten.IsKeyPressed(ebiten.KeySpace) && g.Player.Cooldown == 0 && len(g.Bullets) < cap(g.Bullets) {
+		b := Bullet{
+			W: bulletWidth,
+			H: bulletHeight,
+			Vy: bulletSpeed,
+			FromPlayer: true,
+			Active: true,
+		}
+		b.X = g.Player.X + g.Player.W/2 - b.W/2
+		b.Y = g.Player.Y - b.H
+		g.Bullets = append(g.Bullets, b)
 		g.Player.Cooldown = playerCooldownFrames
 	}
 
 	// Bullet update
-	if g.Bullet.Active {
-		g.Bullet.Y += g.Bullet.Vy
-		if g.Bullet.Y+g.Bullet.H < 0 {
-			g.Bullet.Active = false
+	if len(g.Bullets) > 0 {
+		nextBullets := g.Bullets[:0]
+		for i := range g.Bullets {
+			b := g.Bullets[i]
+			if !b.Active {
+				continue
+			}
+			b.Y += b.Vy
+			if b.Y+b.H < 0 {
+				continue
+			}
+			// Smoke trail
+			for s := 0; s < smokeSpawnPerFrame; s++ {
+				sx := b.X + b.W/2 + (g.Rand.Float64()-0.5)*4
+				sy := b.Y + b.H + g.Rand.Float64()*2
+				g.spawnSmoke(sx, sy)
+			}
+			nextBullets = append(nextBullets, b)
 		}
-		// Smoke trail
-		for i := 0; i < smokeSpawnPerFrame; i++ {
-			sx := g.Bullet.X + g.Bullet.W/2 + (g.Rand.Float64()-0.5)*4
-			sy := g.Bullet.Y + g.Bullet.H + g.Rand.Float64()*2
-			g.spawnSmoke(sx, sy)
-		}
+		g.Bullets = nextBullets
 	}
 
 	// Invader movement
@@ -212,21 +247,54 @@ func (g *Game) Update() error {
 		}
 	}
 
-	// Collisions: bullet vs invaders
-	if g.Bullet.Active {
-		for i := range g.Invaders {
-			inv := &g.Invaders[i]
-			if !inv.Alive {
-				continue
-			}
-			if rectsOverlap(g.Bullet.X, g.Bullet.Y, g.Bullet.W, g.Bullet.H, inv.X, inv.Y, inv.W, inv.H) {
-				inv.Alive = false
-				g.Bullet.Active = false
-				g.spawnExplosion(inv.X+inv.W/2, inv.Y+inv.H/2)
-				g.Score += 10
-				break
+	// UFO spawn + movement
+	if !g.UFO.Active {
+		g.UFOSpawnTick--
+		if g.UFOSpawnTick <= 0 {
+			fromLeft := g.Rand.Intn(2) == 0
+			if fromLeft {
+				g.UFO = UFO{X: -ufoWidth, Y: 24, Vx: ufoSpeed, Active: true}
+			} else {
+				g.UFO = UFO{X: screenWidth + ufoWidth, Y: 24, Vx: -ufoSpeed, Active: true}
 			}
 		}
+	} else {
+		g.UFO.X += g.UFO.Vx
+		g.UFO.FrameTick++
+		if g.UFO.FrameTick >= ufoFrameDelay {
+			g.UFO.FrameTick = 0
+			g.UFO.Frame = (g.UFO.Frame + 1) % ufoFrameCount
+		}
+		if g.UFO.X < -ufoWidth*2 || g.UFO.X > screenWidth+ufoWidth*2 {
+			g.UFO.Active = false
+			g.UFOSpawnTick = ufoSpawnFrames
+		}
+	}
+
+	// Collisions: bullet vs invaders
+	if len(g.Bullets) > 0 {
+		nextBullets := g.Bullets[:0]
+		for bi := range g.Bullets {
+			b := g.Bullets[bi]
+			hit := false
+			for i := range g.Invaders {
+				inv := &g.Invaders[i]
+				if !inv.Alive {
+					continue
+				}
+				if rectsOverlap(b.X, b.Y, b.W, b.H, inv.X, inv.Y, inv.W, inv.H) {
+					inv.Alive = false
+					g.spawnExplosion(inv.X+inv.W/2, inv.Y+inv.H/2)
+					g.Score += 10
+					hit = true
+					break
+				}
+			}
+			if !hit {
+				nextBullets = append(nextBullets, b)
+			}
+		}
+		g.Bullets = nextBullets
 	}
 
 	// Win/Lose check
@@ -304,12 +372,20 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 	}
 
+	// UFO
+	if g.UFO.Active && len(g.UFOSprites) == ufoFrameCount {
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Translate(g.UFO.X, g.UFO.Y)
+		screen.DrawImage(g.UFOSprites[g.UFO.Frame], op)
+	}
+
 	// Bullet
-	if g.Bullet.Active {
+	for i := range g.Bullets {
+		b := &g.Bullets[i]
 		// Glow layers
-		ebitenutil.DrawRect(screen, g.Bullet.X-3, g.Bullet.Y-4, g.Bullet.W+6, g.Bullet.H+8, color.RGBA{R: 120, G: 200, B: 255, A: 60})
-		ebitenutil.DrawRect(screen, g.Bullet.X-1, g.Bullet.Y-2, g.Bullet.W+2, g.Bullet.H+4, color.RGBA{R: 180, G: 230, B: 255, A: 120})
-		ebitenutil.DrawRect(screen, g.Bullet.X, g.Bullet.Y, g.Bullet.W, g.Bullet.H, color.RGBA{R: 240, G: 240, B: 255, A: 255})
+		ebitenutil.DrawRect(screen, b.X-3, b.Y-4, b.W+6, b.H+8, color.RGBA{R: 120, G: 200, B: 255, A: 60})
+		ebitenutil.DrawRect(screen, b.X-1, b.Y-2, b.W+2, b.H+4, color.RGBA{R: 180, G: 230, B: 255, A: 120})
+		ebitenutil.DrawRect(screen, b.X, b.Y, b.W, b.H, color.RGBA{R: 240, G: 240, B: 255, A: 255})
 	}
 
 	// Shockwaves
@@ -458,6 +534,21 @@ func loadInvaderSprites() ([][]*ebiten.Image, error) {
 			sub := sheet.SubImage(imageRect(x0, y0, int(invaderWidth), int(invaderHeight))).(*ebiten.Image)
 			frames[row][frame] = sub
 		}
+	}
+	return frames, nil
+}
+
+func loadUFOSprites() ([]*ebiten.Image, error) {
+	sheet, _, err := ebitenutil.NewImageFromFile("/Users/thorej/opt/codex/go-invaders/assets/ufo.png")
+	if err != nil {
+		return nil, err
+	}
+	frames := make([]*ebiten.Image, ufoFrameCount)
+	for frame := 0; frame < ufoFrameCount; frame++ {
+		x0 := frame * ufoWidth
+		y0 := 0
+		sub := sheet.SubImage(imageRect(x0, y0, ufoWidth, ufoHeight)).(*ebiten.Image)
+		frames[frame] = sub
 	}
 	return frames, nil
 }
