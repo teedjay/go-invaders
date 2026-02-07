@@ -60,7 +60,7 @@ const (
 	c64SpriteRows = 8
 	c64FrameCount = 4
 	c64FrameDelay = 8
-	formationDurationFrames = 180
+	formationDurationFrames = 300
 	formationSpawnFrames = 360
 	formationInitialDelayFrames = 300
 	formationWaveAmplitude = 60.0
@@ -960,8 +960,10 @@ func formationPos(side, row, col int, t float64) (float64, float64) {
 	offsetY := float64(row) * 48
 	offsetX := float64(col) * 48 - 72
 
-	startX := -float64(c64SpriteWidth) - 20
-	endX := float64(screenWidth) + float64(c64SpriteWidth) + 20
+	maxOffsetX := float64((4-1)*48 - 72)
+	minOffsetX := -72.0
+	startX := -float64(c64SpriteWidth) - 20 - maxOffsetX
+	endX := float64(screenWidth) + float64(c64SpriteWidth) + 20 - minOffsetX
 	if side == 1 {
 		startX, endX = endX, startX
 	}
