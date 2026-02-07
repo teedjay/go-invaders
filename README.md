@@ -2,6 +2,8 @@
 
 A fast, colorful Space‑Invaders‑inspired arcade shooter built with Go and Ebitengine. It features procedural effects, animated pixel art sprites, MOD music on the start screen, and a bunch of flashy particle explosions.
 
+![Start Screen](docs/screen_start.png)
+
 ## Features
 - Classic invader grid with score and level progression
 - Animated player ship with a temporary “super‑duper” mode
@@ -16,7 +18,6 @@ A fast, colorful Space‑Invaders‑inspired arcade shooter built with Go and Eb
 - `E`: Trigger Game Over (debug)
 - `F`: Hidden “kill all regular aliens” sequence
 
-
 ## Implementation
 All code has been created by Codex (GPT5.2, Medium model in the MacApp,
 Version 260206.1448 (565)).  Using planning mode for new features and
@@ -28,7 +29,7 @@ ship sprites was found on the Internet.
 Music and colorful bitmap font was also found on the Internet and the start
 screen image was made by Apple Intelligence in Image Playground.
 
-See credits for music, sprites and font.
+See credits below for music, sprites and font.
 
 ## Build & Run
 ```bash
@@ -49,3 +50,5 @@ go run .
 - Music is an [Amiga module by Codex](https://modarchive.org/index.php?request=view_by_moduleid&query=159551)
 - Player Ship sprites from [Ravenmore Industries](https://ravenmore.itch.io/space-shooter-assets-space-rage)
 - Bitmap Font by [Matthew Walkden](https://pixeljoint.com/pixelart/33728.htm)
+
+![Game Over Screen](docs/screen_end.png)
