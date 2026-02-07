@@ -582,7 +582,7 @@ func (g *Game) Update() error {
 		g.LevelComplete = true
 		g.CompleteTick = 0
 	}
-	if g.LevelComplete && g.CompleteTick < completeTextDurationFrames {
+	if g.LevelComplete {
 		g.CompleteTick++
 	}
 
@@ -811,9 +811,14 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		if t > 1 {
 			t = 1
 		}
-		y := completeTextStartY + (float64(screenHeight)/2-completeTextStartY)*easeOutQuad(t)
+		finalY := float64(screenHeight) * 0.42
+		y := completeTextStartY + (finalY-completeTextStartY)*easeOutQuad(t)
 		pulse := 1.0 + 0.08*math.Sin(float64(g.CompleteTick)*0.25)
 		drawHugeText(screen, "GREAT WORK", screenWidth/2, int(y), pulse)
+		if g.CompleteTick >= completeTextDurationFrames {
+			glow := 0.5 + 0.5*math.Sin(float64(g.CompleteTick)*0.08)
+			drawGlowText(screen, "PRESS FIRE TO CONTINUE", screenWidth/2, int(float64(screenHeight)*0.5), 2.2, glow)
+		}
 	}
 }
 
@@ -1238,23 +1243,47 @@ func easeOutQuad(t float64) float64 {
 }
 
 func drawHugeText(screen *ebiten.Image, text string, centerX, centerY int, scaleFactor float64) {
-	lines := []string{text}
 	scale := 4
-	for _, line := range lines {
-		w := int(float64(len(line)*8*scale) * scaleFactor)
-		x := centerX - w/2
-		y := centerY - int(float64(8*scale)*scaleFactor)/2
-		for i, r := range line {
-			ch := string(r)
-			img := ebiten.NewImage(8, 8)
-			img.Fill(color.RGBA{0, 0, 0, 0})
-			ebitenutil.DebugPrintAt(img, ch, 0, 0)
-			op := &ebiten.DrawImageOptions{}
-			op.GeoM.Scale(float64(scale)*scaleFactor, float64(scale)*scaleFactor)
-			op.GeoM.Translate(float64(x)+float64(i*8*scale)*scaleFactor, float64(y))
-			screen.DrawImage(img, op)
-		}
-	}
+	baseW := len(text) * 7
+	baseH := 16
+	img := ebiten.NewImage(baseW, baseH)
+	img.Fill(color.RGBA{0, 0, 0, 0})
+	ebitenutil.DebugPrintAt(img, text, 0, 4)
+
+	scaleF := float64(scale) * scaleFactor
+	w := float64(baseW) * scaleF
+	h := float64(baseH) * scaleF
+	x := float64(centerX) - w/2
+	y := float64(centerY) - h/2
+
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Scale(scaleF, scaleF)
+	op.GeoM.Translate(x, y)
+	screen.DrawImage(img, op)
+}
+
+func drawGlowText(screen *ebiten.Image, text string, centerX, centerY int, scaleFactor float64, glow float64) {
+	baseW := len(text) * 7
+	baseH := 16
+	img := ebiten.NewImage(baseW, baseH)
+	img.Fill(color.RGBA{0, 0, 0, 0})
+	ebitenutil.DebugPrintAt(img, text, 0, 4)
+
+	scaleF := scaleFactor
+	w := float64(baseW) * scaleF
+	h := float64(baseH) * scaleF
+	x := float64(centerX) - w/2
+	y := float64(centerY) - h/2
+
+	// Main text color fades white -> yellow
+	mainOp := &ebiten.DrawImageOptions{}
+	mainOp.GeoM.Scale(scaleF, scaleF)
+	mainOp.GeoM.Translate(x, y)
+	r := 1.0
+	gc := 1.0
+	b := 1.0 - 0.7*glow
+	mainOp.ColorM.Scale(r, gc, b, 0.95)
+	screen.DrawImage(img, mainOp)
 }
 
 func (g *Game) isLevelComplete() bool {
