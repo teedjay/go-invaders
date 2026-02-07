@@ -74,6 +74,9 @@ const (
 	hugeExplosionParticleMultiplier = 4
 	hugeExplosionShockwaveScale = 1.8
 
+	completeTextDurationFrames = 90
+	completeTextStartY = -80.0
+
 	playerAnimDelay = 6
 	playerSuperDurationFrames = 480
 	playerSuperBlinkFirstFrames = 60
@@ -204,6 +207,9 @@ type Game struct {
 
 	PlayerSprites PlayerSpriteSet
 	PlayerSuperSprites PlayerSpriteSet
+
+	LevelComplete bool
+	CompleteTick int
 }
 
 func NewGame() (*Game, error) {
@@ -269,7 +275,7 @@ func NewGame() (*Game, error) {
 }
 
 func (g *Game) Update() error {
-	if g.GameOver || g.Win {
+	if g.GameOver {
 		return nil
 	}
 
@@ -297,7 +303,7 @@ func (g *Game) Update() error {
 	if g.Player.Cooldown > 0 {
 		g.Player.Cooldown--
 	}
-	if ebiten.IsKeyPressed(ebiten.KeySpace) && g.Player.Cooldown == 0 && len(g.Bullets) < cap(g.Bullets) {
+	if !g.LevelComplete && ebiten.IsKeyPressed(ebiten.KeySpace) && g.Player.Cooldown == 0 && len(g.Bullets) < cap(g.Bullets) {
 		b := Bullet{
 			W: bulletWidth,
 			H: bulletHeight,
@@ -535,7 +541,7 @@ func (g *Game) Update() error {
 		g.Bullets = nextBullets
 	}
 
-	// Win/Lose check
+	// Win/Lose check (invaders only)
 	aliveCount := 0
 	for i := range g.Invaders {
 		if g.Invaders[i].Alive {
@@ -547,6 +553,15 @@ func (g *Game) Update() error {
 	}
 	if aliveCount == 0 {
 		g.Win = true
+	}
+
+	// Level complete when everything is finished
+	if !g.LevelComplete && g.isLevelComplete() {
+		g.LevelComplete = true
+		g.CompleteTick = 0
+	}
+	if g.LevelComplete && g.CompleteTick < completeTextDurationFrames {
+		g.CompleteTick++
 	}
 
 	// Particles update
@@ -739,11 +754,18 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 
 	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("Score: %d", g.Score), 10, 10)
-	if g.Win {
-		ebitenutil.DebugPrintAt(screen, "WIN", screenWidth/2-20, screenHeight/2-10)
-	}
 	if g.GameOver {
 		ebitenutil.DebugPrintAt(screen, "GAME OVER", screenWidth/2-40, screenHeight/2-10)
+	}
+
+	// GREAT WORK banner
+	if g.LevelComplete {
+		t := float64(g.CompleteTick) / float64(completeTextDurationFrames)
+		if t > 1 {
+			t = 1
+		}
+		y := completeTextStartY + (float64(screenHeight)/2-completeTextStartY)*easeOutQuad(t)
+		drawHugeText(screen, "GREAT WORK", screenWidth/2, int(y))
 	}
 }
 
@@ -1161,4 +1183,38 @@ func easeInOutQuad(t float64) float64 {
 		return 2 * t * t
 	}
 	return 1 - math.Pow(-2*t+2, 2)/2
+}
+
+func easeOutQuad(t float64) float64 {
+	return 1 - (1-t)*(1-t)
+}
+
+func drawHugeText(screen *ebiten.Image, text string, centerX, y int) {
+	lines := []string{text}
+	scale := 4
+	for _, line := range lines {
+		w := len(line) * 8 * scale
+		x := centerX - w/2
+		for i, r := range line {
+			ch := string(r)
+			img := ebiten.NewImage(8, 8)
+			ebitenutil.DebugPrintAt(img, ch, 0, 0)
+			op := &ebiten.DrawImageOptions{}
+			op.GeoM.Scale(float64(scale), float64(scale))
+			op.GeoM.Translate(float64(x+i*8*scale), float64(y))
+			screen.DrawImage(img, op)
+		}
+	}
+}
+
+func (g *Game) isLevelComplete() bool {
+	if !g.Win {
+		return false
+	}
+	for i := range g.Invaders {
+		if g.Invaders[i].Alive || g.Invaders[i].Dying {
+			return false
+		}
+	}
+	return true
 }
