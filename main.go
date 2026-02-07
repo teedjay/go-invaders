@@ -337,29 +337,7 @@ func (g *Game) Update() error {
 	}
 
 	// Start screen flow
-	if g.StartState != startStateDone {
-		g.StartTick++
-		if g.StartState == startStateScreen && g.StartTick >= 2520 {
-			g.StartTick = 0
-		}
-		if g.StartState == startStateScreen {
-			if ebiten.IsKeyPressed(ebiten.KeySpace) {
-				g.StartState = startStateFading
-				g.StartFadeTick = 0
-			}
-		} else if g.StartState == startStateFading {
-			g.StartFadeTick++
-			fadeT := float64(g.StartFadeTick) / float64(startFadeFrames)
-			if fadeT > 1 {
-				fadeT = 1
-			}
-			g.setMusicVolume(0.3 * (1.0 - fadeT))
-			if g.StartFadeTick >= startFadeFrames {
-				g.stopMusic()
-				g.StartState = startStateDone
-				g.resetLevelState()
-			}
-		}
+	if g.updateStartScreen() {
 		return nil
 	}
 
@@ -640,7 +618,6 @@ func (g *Game) Update() error {
 						e.Vy = formationShotSpeedY
 						e.Vx = formationShotSpeedXMin + g.Rand.Float64()*(formationShotSpeedXMax-formationShotSpeedXMin)
 						g.spawnHugeExplosion(e.X+float64(c64SpriteWidth)/2, e.Y+float64(c64SpriteHeight)/2)
-						g.playSfx(g.Sfx.Explosion, sfxVolume)
 						g.Score += 10
 						b.Active = false
 						g.stopWheee(b.Wheee)
@@ -655,7 +632,6 @@ func (g *Game) Update() error {
 			if g.UFO.Active && !g.UFO.Crashing {
 				if rectsOverlap(b.X, b.Y, b.W, b.H, g.UFO.X, g.UFO.Y, ufoWidth, ufoHeight) {
 					g.spawnBigExplosion(g.UFO.X+float64(ufoWidth)/2, g.UFO.Y+float64(ufoHeight)/2)
-					g.playSfx(g.Sfx.Explosion, sfxVolume)
 					g.UFO.Crashing = true
 					g.UFO.CrashAngle = 0
 					g.UFO.CrashRadius = 0.6
@@ -675,7 +651,6 @@ func (g *Game) Update() error {
 					inv.Dying = true
 					inv.DeathTick = 0
 					g.spawnExplosion(inv.X+inv.W/2, inv.Y+inv.H/2)
-					g.playSfx(g.Sfx.Explosion, sfxVolume)
 					g.Score += 10
 					g.InvaderSpeed += g.InvaderSpeedIncrease
 					hit = true
@@ -802,38 +777,7 @@ func (g *Game) Update() error {
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Fill(color.RGBA{R: 12, G: 16, B: 20, A: 255})
 
-	if g.StartState != startStateDone {
-		drawStartImage(screen, g.StartImage)
-		alpha := 0.0
-		if g.StartTick >= 120 && g.StartTick < 180 {
-			alpha = float64(g.StartTick-120) / 60.0
-		} else if g.StartTick >= 180 && g.StartTick < 1800 {
-			alpha = 1.0
-		} else if g.StartTick >= 1800 && g.StartTick < 1920 {
-			alpha = 1.0 - float64(g.StartTick-1800)/120.0
-		}
-		var waveAmp float64
-		if g.StartTick >= 300 && g.StartTick < 600 {
-			t := float64(g.StartTick-300) / 300.0
-			waveAmp = 50 * t
-		} else if g.StartTick >= 600 && g.StartTick < 1200 {
-			waveAmp = 50
-		} else if g.StartTick >= 1200 && g.StartTick < 1500 {
-			t := float64(g.StartTick-1200) / 300.0
-			waveAmp = 50 * (1.0 - t)
-		}
-		drawAmigaText(screen, g.StartFont, "GO INVADERS", screenWidth/2, int(float64(screenHeight)*0.2), alpha, waveAmp, g.StartTick)
-		if g.StartTick >= startPromptDelayFrames {
-			glow := 0.5 + 0.5*math.Sin(float64(g.StartTick)*0.08)
-			drawGlowText(screen, "PRESS FIRE TO START", screenWidth/2, int(float64(screenHeight)*0.65), 3.0, glow)
-		}
-		if g.StartState == startStateFading {
-			alpha := easeInOutQuad(float64(g.StartFadeTick) / float64(startFadeFrames))
-			if alpha > 1 {
-				alpha = 1
-			}
-			drawFadeOverlay(screen, 0, 0, 0, alpha)
-		}
+	if g.drawStartScreen(screen) {
 		return
 	}
 
