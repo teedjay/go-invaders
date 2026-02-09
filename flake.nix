@@ -16,17 +16,21 @@
             go
             pkg-config
 
+            # Toolchain for cgo linking
+            gcc
+
             # Audio (provides alsa.pc)
             alsa-lib
 
-            # X11 headers Ebiten/GLFW expects
+            # X11 libs/headers Ebiten/GLFW expects
             xorg.libX11
             xorg.libXrandr
             xorg.libXinerama
             xorg.libXcursor
             xorg.libXi
+            xorg.libXxf86vm
 
-            # OpenGL / GL headers
+            # OpenGL
             mesa
             libGL
           ];
