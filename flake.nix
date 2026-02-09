@@ -2,7 +2,7 @@
   description = "Ebiten (Go) dev shell with X11/ALSA deps for Linux (Ubuntu 24.04 host)";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -31,7 +31,6 @@
             libGL
           ];
 
-          # Helps some builds find pkg-config metadata
           shellHook = ''
             export CGO_ENABLED=1
             echo "Ebiten Linux deps loaded (X11 + ALSA + GL)."
