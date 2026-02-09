@@ -105,10 +105,10 @@ type Player struct {
 }
 
 type Star struct {
-	X, Y float64
+	X, Y  float64
 	Speed float64
-	Size float64
-	Halo bool
+	Size  float64
+	Halo  bool
 }
 
 type Invader struct {
@@ -230,13 +230,13 @@ type Game struct {
 	PlayerSprites      PlayerSpriteSet
 	PlayerSuperSprites PlayerSpriteSet
 
-	LevelComplete bool
-	CompleteTick  int
-	Level         int
-	LevelState    int
-	FadeTick      int
-	Lives         int
-	GameOverTick  int
+	LevelComplete     bool
+	CompleteTick      int
+	Level             int
+	LevelState        int
+	FadeTick          int
+	Lives             int
+	GameOverTick      int
 	GameOverTriggered bool
 	GameOverWaitTick  int
 	GameOverFadeTick  int
@@ -292,9 +292,9 @@ func NewGame() (*Game, error) {
 	g.StartState = startStateScreen
 	g.StartTick = 0
 	g.StartFadeTick = 0
-	g.StartImage, _ = loadImage("/Users/thorej/opt/codex/go-invaders/assets/image.png")
-	g.StartFont, _ = loadAmigaFont("/Users/thorej/opt/codex/go-invaders/assets/amiga_font.png")
-	g.startMusic("/Users/thorej/opt/codex/go-invaders/music/codex_amiga_mstb.mod")
+	g.StartImage, _ = loadImage("assets/image.png")
+	g.StartFont, _ = loadAmigaFont("assets/amiga_font.png")
+	g.startMusic("music/codex_amiga_mstb.mod")
 	g.Stars = initStars(g.Rand, 160)
 	g.Player = Player{
 		X:        (screenWidth - playerWidth) / 2,
@@ -1253,7 +1253,7 @@ func (g *Game) resetToStartScreen() {
 	g.StartState = startStateScreen
 	g.StartTick = 0
 	g.StartFadeTick = 0
-	g.startMusic("/Users/thorej/opt/codex/go-invaders/music/codex_amiga_mstb.mod")
+	g.startMusic("music/codex_amiga_mstb.mod")
 	g.setMusicVolume(0.3)
 
 	g.resetLevelState()

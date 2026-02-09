@@ -14,7 +14,7 @@ type AmigaFont struct {
 }
 
 func loadInvaderSprites() ([][]*ebiten.Image, error) {
-	sheet, _, err := ebitenutil.NewImageFromFile("/Users/thorej/opt/codex/go-invaders/assets/enemies.png")
+	sheet, _, err := ebitenutil.NewImageFromFile("assets/enemies.png")
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +32,7 @@ func loadInvaderSprites() ([][]*ebiten.Image, error) {
 }
 
 func loadUFOSprites() ([]*ebiten.Image, error) {
-	sheet, _, err := ebitenutil.NewImageFromFile("/Users/thorej/opt/codex/go-invaders/assets/ufo.png")
+	sheet, _, err := ebitenutil.NewImageFromFile("assets/ufo.png")
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func loadUFOSprites() ([]*ebiten.Image, error) {
 }
 
 func loadC64Sprites() ([][]*ebiten.Image, error) {
-	sheet, _, err := ebitenutil.NewImageFromFile("/Users/thorej/opt/codex/go-invaders/assets/c64_enemies.png")
+	sheet, _, err := ebitenutil.NewImageFromFile("assets/c64_enemies.png")
 	if err != nil {
 		return nil, err
 	}
@@ -65,23 +65,23 @@ func loadC64Sprites() ([][]*ebiten.Image, error) {
 }
 
 func loadPlayerSprites() (PlayerSpriteSet, error) {
-	m, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/player/player_b_m.png")
+	m, err := loadImage("assets/player/player_b_m.png")
 	if err != nil {
 		return PlayerSpriteSet{}, err
 	}
-	l1, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/player/player_b_l1.png")
+	l1, err := loadImage("assets/player/player_b_l1.png")
 	if err != nil {
 		return PlayerSpriteSet{}, err
 	}
-	l2, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/player/player_b_l2.png")
+	l2, err := loadImage("assets/player/player_b_l2.png")
 	if err != nil {
 		return PlayerSpriteSet{}, err
 	}
-	r1, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/player/player_b_r1.png")
+	r1, err := loadImage("assets/player/player_b_r1.png")
 	if err != nil {
 		return PlayerSpriteSet{}, err
 	}
-	r2, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/player/player_b_r2.png")
+	r2, err := loadImage("assets/player/player_b_r2.png")
 	if err != nil {
 		return PlayerSpriteSet{}, err
 	}
@@ -89,23 +89,23 @@ func loadPlayerSprites() (PlayerSpriteSet, error) {
 }
 
 func loadPlayerSuperSprites() (PlayerSpriteSet, error) {
-	m, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/player/player_r_m.png")
+	m, err := loadImage("assets/player/player_r_m.png")
 	if err != nil {
 		return PlayerSpriteSet{}, err
 	}
-	l1, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/player/player_r_l1.png")
+	l1, err := loadImage("assets/player/player_r_l1.png")
 	if err != nil {
 		return PlayerSpriteSet{}, err
 	}
-	l2, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/player/player_r_l2.png")
+	l2, err := loadImage("assets/player/player_r_l2.png")
 	if err != nil {
 		return PlayerSpriteSet{}, err
 	}
-	r1, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/player/player_r_r1.png")
+	r1, err := loadImage("assets/player/player_r_r1.png")
 	if err != nil {
 		return PlayerSpriteSet{}, err
 	}
-	r2, err := loadImage("/Users/thorej/opt/codex/go-invaders/assets/player/player_r_r2.png")
+	r2, err := loadImage("assets/player/player_r_r2.png")
 	if err != nil {
 		return PlayerSpriteSet{}, err
 	}
