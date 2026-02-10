@@ -38,6 +38,26 @@ See credits below for music, sprites and font.
 go run .
 ```
 
+## Compile amd64 binaray for Linux using Docker
+The game still loads assets during start, so you would need to 
+run the binary from the repo folder.
+```bash
+docker run --rm -it --platform linux/amd64 \
+  -v "$PWD":/src -w /src \
+  ubuntu:24.04 bash -lc '
+    apt-get update &&
+    apt-get install -y --no-install-recommends \
+      ca-certificates git build-essential pkg-config \
+      libasound2-dev \
+      libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxxf86vm-dev \
+      libgl1-mesa-dev &&
+    # install go (pick your version); simplest is apt’s:
+    apt-get install -y golang &&
+    go env &&
+    go build -v .
+  '
+```
+
 ## Assets
 - `assets/`: sprites, start image, font
 - `music/`: MOD file for start screen playback
